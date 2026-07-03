@@ -43,6 +43,14 @@ async function proxy(request: Request, context: RouteContext) {
 
   const headers = new Headers(request.headers);
   headers.delete("host");
+  headers.delete("connection");
+  headers.delete("keep-alive");
+  headers.delete("proxy-authenticate");
+  headers.delete("proxy-authorization");
+  headers.delete("te");
+  headers.delete("trailer");
+  headers.delete("transfer-encoding");
+  headers.delete("upgrade");
 
   const init: RequestInit & { duplex?: "half" } = {
     method: request.method,
@@ -55,14 +63,25 @@ async function proxy(request: Request, context: RouteContext) {
     init.duplex = "half";
   }
 
-  const response = await fetch(target, init);
-  const responseHeaders = new Headers(response.headers);
-  responseHeaders.delete("content-encoding");
-  responseHeaders.delete("content-length");
+  try {
+    const response = await fetch(target, init);
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("content-length");
 
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: responseHeaders
-  });
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders
+    });
+  } catch (error) {
+    console.error(`Backend proxy failed for ${target.toString()}`, error);
+    return Response.json(
+      {
+        error: "Backend API unavailable",
+        detail: error instanceof Error ? error.message : "Unknown proxy error"
+      },
+      { status: 502 }
+    );
+  }
 }

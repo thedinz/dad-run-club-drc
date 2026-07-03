@@ -218,17 +218,23 @@ export default function AdminDashboard({
 
   async function login(event: FormEvent) {
     event.preventDefault();
-    const result = await apiFetch<{ token: string; admin: { username: string } }>(
-      "/admin/login",
-      {
+    setStatus("Signing in...");
+
+    try {
+      const result = await apiFetch<{
+        token: string;
+        admin: { username: string };
+      }>("/admin/login", {
         method: "POST",
         body: JSON.stringify({ username, password })
-      }
-    );
-    window.localStorage.setItem("drc-admin-session", result.token);
-    setPassword("");
-    setSavedToken(result.token);
-    setStatus(`Signed in as ${result.admin.username}`);
+      });
+      window.localStorage.setItem("drc-admin-session", result.token);
+      setPassword("");
+      setSavedToken(result.token);
+      setStatus(`Signed in as ${result.admin.username}`);
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    }
   }
 
   function logout() {
@@ -245,33 +251,38 @@ export default function AdminDashboard({
     setStatus("Refreshing...");
     const now = new Date();
     const to = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 120);
-    const [summaryData, inviteData, userData, mediaData, eventData] =
-      await Promise.all([
-        adminFetch<Summary>("/admin/summary", adminToken),
-        adminFetch<{ inviteCodes: InviteCode[] }>(
-          "/admin/invite-codes",
-          adminToken
-        ),
-        adminFetch<{ users: User[] }>("/admin/users", adminToken),
-        adminFetch<{ media: MediaItem[] }>("/admin/media", adminToken),
-        apiFetch<{ events: CalendarEvent[] }>(
-          `/events?from=${encodeURIComponent(
-            now.toISOString()
-          )}&to=${encodeURIComponent(to.toISOString())}`
-        )
-      ]);
 
-    setSummary(summaryData);
-    setSettingsForm((current) => ({
-      ...current,
-      adminUsername: summaryData.settings.adminUsername,
-      chatRetentionDays: summaryData.settings.chatRetentionDays
-    }));
-    setInviteCodes(inviteData.inviteCodes);
-    setUsers(userData.users);
-    setMedia(mediaData.media);
-    setEvents(eventData.events);
-    setStatus("Dashboard is current");
+    try {
+      const [summaryData, inviteData, userData, mediaData, eventData] =
+        await Promise.all([
+          adminFetch<Summary>("/admin/summary", adminToken),
+          adminFetch<{ inviteCodes: InviteCode[] }>(
+            "/admin/invite-codes",
+            adminToken
+          ),
+          adminFetch<{ users: User[] }>("/admin/users", adminToken),
+          adminFetch<{ media: MediaItem[] }>("/admin/media", adminToken),
+          apiFetch<{ events: CalendarEvent[] }>(
+            `/events?from=${encodeURIComponent(
+              now.toISOString()
+            )}&to=${encodeURIComponent(to.toISOString())}`
+          )
+        ]);
+
+      setSummary(summaryData);
+      setSettingsForm((current) => ({
+        ...current,
+        adminUsername: summaryData.settings.adminUsername,
+        chatRetentionDays: summaryData.settings.chatRetentionDays
+      }));
+      setInviteCodes(inviteData.inviteCodes);
+      setUsers(userData.users);
+      setMedia(mediaData.media);
+      setEvents(eventData.events);
+      setStatus("Dashboard is current");
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    }
   }
 
   async function createInvite(event: FormEvent) {
@@ -999,10 +1010,40 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await readApiError(response));
   }
 
   return response.json() as Promise<T>;
+}
+
+async function readApiError(response: Response) {
+  const fallback = `Request failed with ${response.status}`;
+  const text = await response.text();
+
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(text) as {
+      error?: string;
+      detail?: string;
+      message?: string;
+    };
+    return [parsed.error ?? parsed.message, parsed.detail]
+      .filter(Boolean)
+      .join(": ") || fallback;
+  } catch {
+    return text;
+  }
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "Something went wrong";
 }
 
 async function adminFetch<T>(
