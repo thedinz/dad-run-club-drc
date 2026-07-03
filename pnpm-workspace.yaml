@@ -1,0 +1,27 @@
+packages:
+  - "apps/*"
+allowBuilds:
+  esbuild: true
+  sharp: true
+minimumReleaseAgeExclude:
+  - '@expo/cli@57.0.4'
+  - '@expo/config-plugins@57.0.2'
+  - '@expo/config@57.0.2'
+  - '@expo/env@2.4.1'
+  - '@expo/fingerprint@0.20.2'
+  - '@expo/image-utils@0.11.1'
+  - '@expo/local-build-cache-provider@57.0.2'
+  - '@expo/metro-config@57.0.3'
+  - '@expo/prebuild-config@57.0.4'
+  - '@expo/require-utils@57.0.1'
+  - '@expo/schema-utils@57.0.1'
+  - '@react-navigation/bottom-tabs@7.18.6'
+  - '@react-navigation/core@7.21.4'
+  - '@react-navigation/elements@2.9.28'
+  - '@react-navigation/native@7.3.6'
+  - expo-asset@57.0.3
+  - expo-constants@57.0.3
+  - expo-modules-autolinking@57.0.4
+  - expo-modules-core@57.0.2
+  - expo@57.0.2
+  - tsx@4.22.5

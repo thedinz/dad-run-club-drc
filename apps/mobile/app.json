@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Dad Run Club",
+    "slug": "dad-run-club-drc",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "drc",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f7f5ee"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.thedinz.dadrunclub"
+    },
+    "android": {
+      "package": "com.thedinz.dadrunclub"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiUrl": "http://localhost:4000"
+    }
+  }
+}

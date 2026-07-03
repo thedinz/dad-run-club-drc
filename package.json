@@ -1,0 +1,21 @@
+{
+  "name": "dad-run-club-drc",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @drc/api --filter @drc/web dev",
+    "dev:api": "pnpm --filter @drc/api dev",
+    "dev:web": "pnpm --filter @drc/web dev",
+    "mobile": "pnpm --filter @drc/mobile start",
+    "mobile:ios": "pnpm --filter @drc/mobile ios",
+    "mobile:web": "pnpm --filter @drc/mobile web",
+    "db:seed": "pnpm --filter @drc/api db:seed",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r --filter @drc/api --filter @drc/web build",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

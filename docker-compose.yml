@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: drc
+      POSTGRES_USER: drc
+      POSTGRES_PASSWORD: drc
+    ports:
+      - "5432:5432"
+    volumes:
+      - drc-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drc -d drc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: ghcr.io/thedinz/dad-run-club-drc-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://drc:drc@postgres:5432/drc
+      API_PORT: 4000
+      JWT_SECRET: local-dev-jwt-secret-change-me
+      ADMIN_TOKEN: local-admin-token-change-me
+      SEED_INVITE_CODE: DRC-FOUNDERS
+      CORS_ORIGIN: "*"
+      INSTAGRAM_USERNAME: dadrunclubplymouth
+      INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
+      INSTAGRAM_USER_ID: ${INSTAGRAM_USER_ID:-}
+      INSTAGRAM_GRAPH_BASE_URL: ${INSTAGRAM_GRAPH_BASE_URL:-https://graph.facebook.com/v20.0}
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/thedinz/dad-run-club-drc-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  drc-postgres:
