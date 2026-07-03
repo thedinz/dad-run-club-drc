@@ -1,4 +1,10 @@
-import { RRule, rrulestr } from "rrule";
+import * as rruleModule from "rrule";
+
+type RRuleModule = typeof import("rrule");
+type RRuleRuntimeModule = RRuleModule & { default?: RRuleModule };
+
+const rruleRuntime = rruleModule as RRuleRuntimeModule;
+const { RRule, rrulestr } = rruleRuntime.default ?? rruleRuntime;
 
 export type RecurrenceFrequency = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY";
 
