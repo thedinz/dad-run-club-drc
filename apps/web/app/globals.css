@@ -90,6 +90,34 @@ textarea {
   padding: 28px;
 }
 
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}
+
+.login-panel {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+  max-width: 380px;
+  padding: 22px;
+  width: min(100%, 380px);
+}
+
+.login-panel img {
+  border-radius: 8px;
+  height: 76px;
+  width: 76px;
+}
+
+.login-panel h1 {
+  margin: 0;
+}
+
 .admin-header,
 .admin-login,
 .panel,
@@ -105,6 +133,11 @@ textarea {
   display: flex;
   justify-content: space-between;
   padding: 18px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .brand-mark {
@@ -160,11 +193,33 @@ time {
   flex: 1;
 }
 
+.admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.admin-nav button {
+  background: #eef2ef;
+  color: var(--ink);
+}
+
+.admin-nav button.active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.status-line {
+  color: var(--muted);
+  margin: 12px 2px 0;
+}
+
 .metric-grid,
 .admin-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .metric {
@@ -234,6 +289,23 @@ time {
   grid-column: span 4;
 }
 
+.settings-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-form span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .list {
   display: grid;
   gap: 10px;
@@ -264,6 +336,47 @@ time {
   justify-content: flex-end;
 }
 
+.media-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.media-card {
+  background: #fafbf8;
+  border: 1px solid #edf1ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.media-card img,
+.media-download {
+  align-items: center;
+  aspect-ratio: 1;
+  background: #eef2ef;
+  border-radius: 8px;
+  color: var(--ink);
+  display: flex;
+  justify-content: center;
+  object-fit: cover;
+  text-decoration: none;
+  width: 100%;
+}
+
+.media-card div {
+  display: grid;
+  gap: 4px;
+}
+
+.media-card span,
+.media-card p {
+  color: var(--muted);
+  margin: 0;
+}
+
 .icon-button {
   aspect-ratio: 1;
   background: #eef2ef;
@@ -292,7 +405,9 @@ time {
 
   .metric-grid,
   .admin-grid,
-  .event-form {
+  .event-form,
+  .settings-form,
+  .media-grid {
     grid-template-columns: 1fr;
   }
 

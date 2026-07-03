@@ -1,10 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   StyleSheet,
   Text,
@@ -24,10 +28,18 @@ type Session = {
   user: User;
 };
 
+type PendingAttachment = {
+  fileName: string | null;
+  mimeType: string;
+  data: string;
+  uri: string;
+};
+
 export default function ChatScreen() {
   const [session, setSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState("");
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [loading, setLoading] = useState(true);
   const socketRef = useRef<Socket | null>(null);
 
@@ -91,12 +103,56 @@ export default function ChatScreen() {
 
   async function sendMessage() {
     const trimmed = message.trim();
-    if (!trimmed || !session) {
+    if ((!trimmed && !attachment) || !session) {
       return;
     }
 
-    socketRef.current?.emit("chat:send", { body: trimmed });
+    socketRef.current?.emit("chat:send", {
+      body: message,
+      attachments: attachment
+        ? [
+            {
+              fileName: attachment.fileName,
+              mimeType: attachment.mimeType,
+              data: attachment.data
+            }
+          ]
+        : []
+    });
     setMessage("");
+    setAttachment(null);
+  }
+
+  async function pickAttachment() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Photos permission", "Allow photo access to share media.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsEditing: false,
+      base64: true,
+      quality: 0.85
+    });
+
+    if (result.canceled || !result.assets[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      Alert.alert("Could not attach media", "Try another item from your library.");
+      return;
+    }
+
+    setAttachment({
+      fileName: asset.fileName ?? null,
+      mimeType: asset.mimeType ?? "image/jpeg",
+      data: asset.base64,
+      uri: asset.uri
+    });
   }
 
   if (loading) {
@@ -146,12 +202,50 @@ export default function ChatScreen() {
               <Text style={styles.messageName}>
                 {item.user.firstName} {item.user.lastName}
               </Text>
-              <Text style={styles.messageText}>{item.body}</Text>
+              {item.body ? <Text style={styles.messageText}>{item.body}</Text> : null}
+              {item.media?.map((media) => {
+                const mediaUrl = `${API_URL}${media.url}?token=${encodeURIComponent(
+                  session.token
+                )}`;
+                return media.mimeType.startsWith("image/") ? (
+                  <Image
+                    key={media.id}
+                    source={{ uri: mediaUrl }}
+                    style={styles.messageImage}
+                  />
+                ) : (
+                  <TouchableOpacity
+                    key={media.id}
+                    style={styles.fileChip}
+                    onPress={() => Linking.openURL(mediaUrl)}
+                  >
+                    <Ionicons name="document-attach-outline" size={16} color={colors.ink} />
+                    <Text style={styles.fileChipText}>
+                      {media.originalName ?? media.mimeType}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         />
 
+        {attachment ? (
+          <View style={styles.attachmentPreview}>
+            <Image source={{ uri: attachment.uri }} style={styles.attachmentImage} />
+            <Text style={styles.attachmentText}>
+              {attachment.fileName ?? attachment.mimeType}
+            </Text>
+            <TouchableOpacity onPress={() => setAttachment(null)}>
+              <Ionicons name="close-circle" size={22} color={colors.clay} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.composer}>
+          <TouchableOpacity style={styles.attachButton} onPress={pickAttachment}>
+            <Ionicons name="image-outline" size={20} color={colors.ink} />
+          </TouchableOpacity>
           <TextInput
             value={message}
             onChangeText={setMessage}
@@ -329,6 +423,36 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 8
   },
+  attachmentPreview: {
+    alignItems: "center",
+    backgroundColor: colors.panel,
+    borderColor: colors.line,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    padding: 8
+  },
+  attachmentImage: {
+    borderRadius: 6,
+    height: 42,
+    width: 42
+  },
+  attachmentText: {
+    color: colors.ink,
+    flex: 1,
+    fontWeight: "800"
+  },
+  attachButton: {
+    alignItems: "center",
+    backgroundColor: colors.panel,
+    borderColor: colors.line,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: "center",
+    width: 48
+  },
   messageInput: {
     backgroundColor: colors.panel,
     borderColor: colors.line,
@@ -346,6 +470,25 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: "center",
     width: 48
+  },
+  messageImage: {
+    aspectRatio: 1,
+    borderRadius: 8,
+    marginTop: 8,
+    width: 220
+  },
+  fileChip: {
+    alignItems: "center",
+    backgroundColor: "#eef2ef",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 8,
+    padding: 10
+  },
+  fileChipText: {
+    color: colors.ink,
+    fontWeight: "800"
   },
   signupShell: {
     flex: 1,

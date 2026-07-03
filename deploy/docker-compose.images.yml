@@ -1,12 +1,11 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: drc
       POSTGRES_USER: drc
-      POSTGRES_PASSWORD: drc
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - drc-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -16,27 +15,23 @@ services:
       retries: 10
 
   api:
-    image: ghcr.io/thedinz/dad-run-club-drc-api:local
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    image: ghcr.io/thedinz/dad-run-club-drc-api:latest
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://drc:drc@postgres:5432/drc
+      DATABASE_URL: postgres://drc:${POSTGRES_PASSWORD}@postgres:5432/drc
       API_PORT: 4000
-      JWT_SECRET: local-dev-jwt-secret-change-me
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: admin
-      ADMIN_TOKEN: ""
-      SEED_INVITE_CODE: DRC-FOUNDERS
-      CORS_ORIGIN: "*"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      SEED_INVITE_CODE: ${SEED_INVITE_CODE:-DRC-FOUNDERS}
+      CORS_ORIGIN: "${CORS_ORIGIN:-*}"
       MEDIA_STORAGE_PATH: /data/media
-      MAX_UPLOAD_BYTES: 10485760
-      INSTAGRAM_USERNAME: dadrunclubplymouth
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME:-dadrunclubplymouth}
       INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
       INSTAGRAM_USER_ID: ${INSTAGRAM_USER_ID:-}
       INSTAGRAM_GRAPH_BASE_URL: ${INSTAGRAM_GRAPH_BASE_URL:-https://graph.facebook.com/v20.0}
-    ports:
-      - "4000:4000"
     volumes:
       - drc-media:/data/media
     depends_on:
@@ -44,10 +39,8 @@ services:
         condition: service_healthy
 
   web:
-    image: ghcr.io/thedinz/dad-run-club-drc-web:local
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
+    image: ghcr.io/thedinz/dad-run-club-drc-web:latest
+    restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:4000
       NEXT_PUBLIC_API_URL: /api/backend

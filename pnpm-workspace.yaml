@@ -25,3 +25,4 @@ minimumReleaseAgeExclude:
   - expo-modules-core@57.0.2
   - expo@57.0.2
   - tsx@4.22.5
+  - expo-image-picker@57.0.2

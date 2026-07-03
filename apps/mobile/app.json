@@ -12,6 +12,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#f7f5ee"
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Dad Run Club lets you share photos and GIFs in club chat."
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.thedinz.dadrunclub"

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { env } from "./config.js";
+import { hashPassword } from "./security.js";
 
 export const pool = new Pool({
   connectionString: env.databaseUrl
@@ -57,7 +58,40 @@ export async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(event_id, occurrence_start_at)
     );
+
+    CREATE TABLE IF NOT EXISTS media_items (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      chat_message_id TEXT REFERENCES chat_messages(id) ON DELETE CASCADE,
+      original_name TEXT,
+      mime_type TEXT NOT NULL,
+      size_bytes BIGINT NOT NULL,
+      storage_path TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_settings (
+      id TEXT PRIMARY KEY CHECK (id = 'default'),
+      admin_username TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      chat_retention_days INTEGER NOT NULL DEFAULT 365,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
+
+  const adminSettings = await pool.query(
+    "SELECT id FROM admin_settings WHERE id = 'default'"
+  );
+
+  if (adminSettings.rowCount === 0) {
+    await pool.query(
+      `INSERT INTO admin_settings
+        (id, admin_username, password_hash, chat_retention_days)
+       VALUES ('default', $1, $2, 365)`,
+      [env.adminUsername, hashPassword(env.adminPassword)]
+    );
+  }
 
   const invite = await pool.query(
     "SELECT id FROM invite_codes WHERE UPPER(code) = UPPER($1)",

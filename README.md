@@ -10,9 +10,11 @@ First version of Dad Run Club, a monorepo with:
 
 - Landing page shows the Dad Run Club logo at `/`.
 - Admin dashboard is available at `/admin`.
-- Admin can create invite codes and manage calendar events.
+- Admin login defaults to `admin/admin` on first boot and can be changed in Settings.
+- Admin can create invite codes, manage users, manage media, and manage calendar events.
 - Users can sign up in the mobile app with first name, last name, email, and invite code.
-- Chat works over Socket.IO after signup.
+- Chat works over Socket.IO after signup and supports text, emoji, pasted text, images, and GIF attachments.
+- Chat/media retention is configurable in admin from 30 to 1095 days.
 - Calendar supports one-time, daily, weekly, and monthly events.
 - Recurring calendar events can be deleted as one occurrence or as the full series.
 - The mobile app has monthly and list calendar views.
@@ -33,6 +35,18 @@ INSTAGRAM_GRAPH_BASE_URL=https://graph.facebook.com/v20.0
 ```
 
 Then restart the API. The mobile app and admin dashboard already call `/instagram/feed`.
+
+## Backend and proxy model
+
+The web app proxies `/api/backend/*` to the API. In Docker, only the web app needs to be public; the API can stay private on the Compose network.
+
+For a future public deployment, point your external reverse proxy at the web container. The mobile app can talk to the same public FQDN by setting:
+
+```bash
+EXPO_PUBLIC_API_URL=https://your-drc-domain.example/api/backend
+```
+
+You do not need the final FQDN to keep building locally.
 
 ## Local setup
 
@@ -55,10 +69,10 @@ Services:
 - API: `http://localhost:4000`
 - Postgres: `localhost:5432`
 
-Default local admin token:
+Default first-run admin login:
 
 ```bash
-local-admin-token-change-me
+admin/admin
 ```
 
 Default seeded invite code:
@@ -117,6 +131,26 @@ The Compose file includes image names:
 - `ghcr.io/thedinz/dad-run-club-drc-web`
 
 The GitHub Actions workflow builds and pushes those images on pushes to `main`. A server can later run a Compose file that references those GHCR images directly.
+
+For an image-based dev server, copy `deploy/docker-compose.images.yml` and create a `.env` next to it:
+
+```bash
+POSTGRES_PASSWORD=replace-me
+JWT_SECRET=replace-with-a-long-random-string
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin
+SEED_INVITE_CODE=DRC-FOUNDERS
+CORS_ORIGIN=*
+```
+
+Then run:
+
+```bash
+docker compose -f docker-compose.images.yml pull
+docker compose -f docker-compose.images.yml up -d
+```
+
+Expose only the web service through your reverse proxy. The web container forwards `/api/backend` to the API container internally.
 
 ## Early decisions still needed
 

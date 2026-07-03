@@ -10,6 +10,11 @@ export type AuthUser = {
   email: string;
 };
 
+export type AdminSession = {
+  role: "admin";
+  username: string;
+};
+
 declare module "fastify" {
   interface FastifyRequest {
     user?: AuthUser;
@@ -25,6 +30,17 @@ export function signSession(user: AuthUser) {
     },
     env.jwtSecret,
     { expiresIn: "90d" }
+  );
+}
+
+export function signAdminSession(username: string) {
+  return jwt.sign(
+    {
+      role: "admin",
+      username
+    },
+    env.jwtSecret,
+    { expiresIn: "12h" }
   );
 }
 
@@ -44,7 +60,7 @@ export async function requireUser(request: FastifyRequest, reply: FastifyReply) 
 
 export async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!isAdminRequest(request)) {
-    return reply.code(401).send({ error: "Admin token required" });
+    return reply.code(401).send({ error: "Admin login required" });
   }
 
   request.isAdmin = true;
@@ -96,8 +112,35 @@ export function getBearerToken(request: FastifyRequest) {
   return header.slice("Bearer ".length);
 }
 
-function isAdminRequest(request: FastifyRequest) {
+export function getTokenFromRequest(request: FastifyRequest) {
+  const bearer = getBearerToken(request);
+  if (bearer) {
+    return bearer;
+  }
+
+  const query = request.query as { token?: string };
+  return typeof query.token === "string" ? query.token : null;
+}
+
+export function isAdminRequest(request: FastifyRequest) {
   const headerToken = request.headers["x-admin-token"];
   const bearer = getBearerToken(request);
-  return headerToken === env.adminToken || bearer === env.adminToken;
+  if (env.adminToken && (headerToken === env.adminToken || bearer === env.adminToken)) {
+    return true;
+  }
+
+  if (!bearer) {
+    return false;
+  }
+
+  return isAdminToken(bearer);
+}
+
+export function isAdminToken(token: string) {
+  try {
+    const payload = jwt.verify(token, env.jwtSecret) as JwtPayload;
+    return payload.role === "admin";
+  } catch {
+    return false;
+  }
 }

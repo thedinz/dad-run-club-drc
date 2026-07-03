@@ -31,6 +31,14 @@ export type ChatMessage = {
     firstName: string;
     lastName: string;
   };
+  media: Array<{
+    id: string;
+    originalName: string | null;
+    mimeType: string;
+    sizeBytes: number;
+    url: string;
+    createdAt: string;
+  }>;
 };
 
 export type CalendarEvent = {
