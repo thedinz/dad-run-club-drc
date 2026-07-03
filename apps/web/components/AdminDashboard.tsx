@@ -59,7 +59,9 @@ type User = {
   id: string;
   firstName: string;
   lastName: string;
+  username: string;
   email: string;
+  passwordSet?: boolean;
   createdAt?: string;
   messageCount?: number;
   mediaCount?: number;
@@ -112,13 +114,17 @@ type EventForm = {
 type UserForm = {
   firstName: string;
   lastName: string;
+  username: string;
   email: string;
+  password: string;
 };
 
 const blankUser: UserForm = {
   firstName: "",
   lastName: "",
-  email: ""
+  username: "",
+  email: "",
+  password: ""
 };
 
 const navItems: Array<{ id: AdminPage; label: string; icon: LucideIcon }> = [
@@ -308,12 +314,20 @@ export default function AdminDashboard({
 
   async function saveUser(event: FormEvent) {
     event.preventDefault();
+    const payload = {
+      firstName: userForm.firstName,
+      lastName: userForm.lastName,
+      username: userForm.username,
+      email: userForm.email,
+      ...(userForm.password ? { password: userForm.password } : {})
+    };
+
     await adminFetch(
       editingUserId ? `/admin/users/${editingUserId}` : "/admin/users",
       savedToken,
       {
         method: editingUserId ? "PUT" : "POST",
-        body: JSON.stringify(userForm)
+        body: JSON.stringify(payload)
       }
     );
     setEditingUserId(null);
@@ -326,7 +340,9 @@ export default function AdminDashboard({
     setUserForm({
       firstName: user.firstName,
       lastName: user.lastName,
-      email: user.email
+      username: user.username,
+      email: user.email,
+      password: ""
     });
   }
 
@@ -691,6 +707,21 @@ function UsersPanel({
           required
           type="email"
         />
+        <input
+          autoCapitalize="none"
+          value={form.username}
+          onChange={(event) => setForm({ ...form, username: event.target.value })}
+          placeholder="Username"
+          required
+        />
+        <input
+          autoComplete="new-password"
+          value={form.password}
+          onChange={(event) => setForm({ ...form, password: event.target.value })}
+          placeholder={editingUserId ? "New password (optional)" : "Password"}
+          required={!editingUserId}
+          type="password"
+        />
         <button type="submit">
           <Save size={16} />
           {editingUserId ? "Update" : "Create"}
@@ -710,8 +741,8 @@ function UsersPanel({
                 {user.firstName} {user.lastName}
               </strong>
               <span>
-                {user.email} - {user.messageCount ?? 0} messages -{" "}
-                {user.mediaCount ?? 0} media
+                @{user.username} - {user.email} - {user.messageCount ?? 0} messages
+                - {user.mediaCount ?? 0} media
               </span>
             </div>
             <div className="row-actions">

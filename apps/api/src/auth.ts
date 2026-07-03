@@ -7,6 +7,7 @@ export type AuthUser = {
   id: string;
   firstName: string;
   lastName: string;
+  username: string;
   email: string;
 };
 
@@ -22,11 +23,15 @@ declare module "fastify" {
   }
 }
 
+const userSessionVersion = 2;
+
 export function signSession(user: AuthUser) {
   return jwt.sign(
     {
       sub: user.id,
-      email: user.email
+      username: user.username,
+      email: user.email,
+      authVersion: userSessionVersion
     },
     env.jwtSecret,
     { expiresIn: "90d" }
@@ -82,8 +87,14 @@ export async function getUserFromToken(token: string): Promise<AuthUser | null> 
       return null;
     }
 
+    if (payload.authVersion !== userSessionVersion) {
+      return null;
+    }
+
     const result = await pool.query(
-      `SELECT id, first_name, last_name, email FROM users WHERE id = $1`,
+      `SELECT id, first_name, last_name, username, email
+       FROM users
+       WHERE id = $1`,
       [payload.sub]
     );
 
@@ -96,6 +107,7 @@ export async function getUserFromToken(token: string): Promise<AuthUser | null> 
       id: row.id,
       firstName: row.first_name,
       lastName: row.last_name,
+      username: row.username,
       email: row.email
     };
   } catch {

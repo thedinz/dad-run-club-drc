@@ -19,7 +19,7 @@ import {
 import { io, type Socket } from "socket.io-client";
 import { API_URL, api } from "../api";
 import Screen from "../components/Screen";
-import { getStoredItem, setStoredItem } from "../storage";
+import { deleteStoredItem, getStoredItem, setStoredItem } from "../storage";
 import { colors, shadows } from "../theme";
 import type { ChatMessage, User } from "../types";
 
@@ -41,6 +41,8 @@ export default function ChatScreen() {
   const [message, setMessage] = useState("");
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chatError, setChatError] = useState("");
+  const [sending, setSending] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useFocusEffect(
@@ -71,23 +73,48 @@ export default function ChatScreen() {
       return;
     }
 
-    void loadMessages(session.token);
-    const socket = io(API_URL, {
-      auth: { token: session.token },
-      transports: ["websocket"]
-    });
+    let active = true;
+    const refresh = async () => {
+      try {
+        await loadMessages(session.token);
+        if (active) {
+          setChatError("");
+        }
+      } catch (error) {
+        if (!active) {
+          return;
+        }
 
-    socket.on("chat:message", (incoming: ChatMessage) => {
-      setMessages((current) =>
-        current.some((item) => item.id === incoming.id)
-          ? current
-          : [...current, incoming]
-      );
-    });
+        await handleSessionError(error);
+      }
+    };
 
-    socketRef.current = socket;
+    void refresh();
+    const interval = setInterval(() => {
+      void refresh();
+    }, 7000);
+
+    if (canUseSocket()) {
+      const socket = io(API_URL, {
+        auth: { token: session.token },
+        transports: ["websocket"]
+      });
+
+      socket.on("chat:message", (incoming: ChatMessage) => {
+        setMessages((current) =>
+          current.some((item) => item.id === incoming.id)
+            ? current
+            : [...current, incoming]
+        );
+      });
+
+      socketRef.current = socket;
+    }
+
     return () => {
-      socket.disconnect();
+      active = false;
+      clearInterval(interval);
+      socketRef.current?.disconnect();
       socketRef.current = null;
     };
   }, [session]);
@@ -103,24 +130,46 @@ export default function ChatScreen() {
 
   async function sendMessage() {
     const trimmed = message.trim();
-    if ((!trimmed && !attachment) || !session) {
+    if ((!trimmed && !attachment) || !session || sending) {
       return;
     }
 
-    socketRef.current?.emit("chat:send", {
-      body: message,
-      attachments: attachment
-        ? [
-            {
-              fileName: attachment.fileName,
-              mimeType: attachment.mimeType,
-              data: attachment.data
-            }
-          ]
-        : []
-    });
-    setMessage("");
-    setAttachment(null);
+    setSending(true);
+    setChatError("");
+
+    try {
+      const result = await api<{ message: ChatMessage }>(
+        "/chat/messages",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            body: message,
+            attachments: attachment
+              ? [
+                  {
+                    fileName: attachment.fileName,
+                    mimeType: attachment.mimeType,
+                    data: attachment.data
+                  }
+                ]
+              : []
+          })
+        },
+        session.token
+      );
+
+      setMessages((current) =>
+        current.some((item) => item.id === result.message.id)
+          ? current
+          : [...current, result.message]
+      );
+      setMessage("");
+      setAttachment(null);
+    } catch (error) {
+      await handleSessionError(error);
+    } finally {
+      setSending(false);
+    }
   }
 
   async function pickAttachment() {
@@ -155,6 +204,33 @@ export default function ChatScreen() {
     });
   }
 
+  async function handleSessionError(error: unknown) {
+    const messageText = getErrorMessage(error);
+    if (
+      messageText.includes("Authentication required") ||
+      messageText.includes("Invalid session")
+    ) {
+      await deleteStoredItem("drc-session");
+      setSession(null);
+      setMessages([]);
+      setChatError("");
+      return;
+    }
+
+    setChatError(messageText);
+  }
+
+  async function signOut() {
+    await deleteStoredItem("drc-session");
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    setSession(null);
+    setMessages([]);
+    setMessage("");
+    setAttachment(null);
+    setChatError("");
+  }
+
   if (loading) {
     return (
       <Screen>
@@ -181,9 +257,14 @@ export default function ChatScreen() {
             <Text style={styles.kicker}>Club Chat</Text>
             <Text style={styles.title}>Hey, {session.user.firstName}</Text>
           </View>
-          <View style={styles.chatBadge}>
-            <Ionicons name="radio" size={16} color={colors.pine} />
-            <Text>Live</Text>
+          <View style={styles.headerActions}>
+            <View style={styles.chatBadge}>
+              <Ionicons name="sync" size={16} color={colors.pine} />
+              <Text>Synced</Text>
+            </View>
+            <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+              <Ionicons name="log-out-outline" size={18} color={colors.ink} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -242,6 +323,8 @@ export default function ChatScreen() {
           </View>
         ) : null}
 
+        {chatError ? <Text style={styles.error}>{chatError}</Text> : null}
+
         <View style={styles.composer}>
           <TouchableOpacity style={styles.attachButton} onPress={pickAttachment}>
             <Ionicons name="image-outline" size={20} color={colors.ink} />
@@ -253,8 +336,16 @@ export default function ChatScreen() {
             placeholderTextColor={colors.muted}
             style={styles.messageInput}
           />
-          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-            <Ionicons name="send" size={18} color="#fff" />
+          <TouchableOpacity
+            disabled={sending}
+            style={[styles.sendButton, sending && styles.disabled]}
+            onPress={sendMessage}
+          >
+            {sending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Ionicons name="send" size={18} color="#fff" />
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -266,7 +357,9 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
   const [mode, setMode] = useState<"login" | "join">("login");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("DRC-FOUNDERS");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -283,13 +376,15 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
           body: JSON.stringify(
             mode === "login"
               ? {
-                  email,
-                  inviteCode
+                  username,
+                  password
                 }
               : {
                   firstName,
                   lastName,
+                  username,
                   email,
+                  password,
                   inviteCode
                 }
           )
@@ -315,8 +410,8 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
           </Text>
           <Text style={styles.signupCopy}>
             {mode === "login"
-              ? "Already added by an admin? Use your email and club invite code."
-              : "Use your invite code to unlock chat and event tools."}
+              ? "Use the username and password set up for your member account."
+              : "Use your invite code once, then keep your account protected with a password."}
           </Text>
           {mode === "join" ? (
             <>
@@ -338,21 +433,42 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
           ) : null}
           <TextInput
             autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email"
+            value={username}
+            onChangeText={setUsername}
+            placeholder={mode === "login" ? "Username or email" : "Username"}
             placeholderTextColor={colors.muted}
             style={styles.input}
           />
+          {mode === "join" ? (
+            <TextInput
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+            />
+          ) : null}
           <TextInput
-            autoCapitalize="characters"
-            value={inviteCode}
-            onChangeText={setInviteCode}
-            placeholder="Invite code"
+            autoCapitalize="none"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Password"
             placeholderTextColor={colors.muted}
             style={styles.input}
           />
+          {mode === "join" ? (
+            <TextInput
+              autoCapitalize="characters"
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              placeholder="Invite code"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+            />
+          ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <TouchableOpacity
             disabled={saving}
@@ -383,6 +499,19 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
   );
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong";
+}
+
+function canUseSocket() {
+  try {
+    const url = new URL(API_URL);
+    return url.pathname === "" || url.pathname === "/";
+  } catch {
+    return !API_URL.includes("/api/backend");
+  }
+}
+
 const styles = StyleSheet.create({
   center: {
     alignItems: "center",
@@ -410,6 +539,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0
   },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8
+  },
   chatBadge: {
     alignItems: "center",
     backgroundColor: colors.softPine,
@@ -418,6 +552,16 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 8
+  },
+  signOutButton: {
+    alignItems: "center",
+    backgroundColor: colors.panel,
+    borderColor: colors.line,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40
   },
   messages: {
     gap: 10,

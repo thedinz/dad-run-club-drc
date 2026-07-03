@@ -13,7 +13,9 @@ export async function migrate() {
       id TEXT PRIMARY KEY,
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
+      username TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -80,6 +82,22 @@ export async function migrate() {
     );
   `);
 
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+  `);
+
+  await ensureUserCredentials();
+
+  await pool.query(`
+    ALTER TABLE users ALTER COLUMN username SET NOT NULL;
+    ALTER TABLE users ALTER COLUMN password_hash SET NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx
+      ON users (LOWER(username));
+    CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx
+      ON users (LOWER(email));
+  `);
+
   const adminSettings = await pool.query(
     "SELECT id FROM admin_settings WHERE id = 'default'"
   );
@@ -126,6 +144,74 @@ export async function migrate() {
       ]
     );
   }
+}
+
+async function ensureUserCredentials() {
+  const users = await pool.query<{
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    username: string | null;
+    password_hash: string | null;
+  }>(
+    `SELECT id, first_name, last_name, email, username, password_hash
+     FROM users
+     ORDER BY created_at ASC`
+  );
+
+  const usedUsernames = new Set<string>();
+
+  for (const user of users.rows) {
+    const existingUsername = user.username
+      ? normalizeUsername(user.username)
+      : "";
+    const username =
+      existingUsername && !usedUsernames.has(existingUsername)
+        ? existingUsername
+        : uniqueUsername(
+            normalizeUsername(
+              user.email.split("@")[0] ||
+                `${user.first_name}.${user.last_name}` ||
+                "member"
+            ),
+            usedUsernames
+          );
+
+    usedUsernames.add(username);
+
+    await pool.query(
+      `UPDATE users
+       SET username = $2,
+           password_hash = COALESCE(password_hash, $3)
+       WHERE id = $1`,
+      [user.id, username, hashPassword(randomUUID())]
+    );
+  }
+}
+
+export function normalizeUsername(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "")
+      .replace(/^[._-]+|[._-]+$/g, "")
+      .slice(0, 32) || "member"
+  );
+}
+
+function uniqueUsername(base: string, usedUsernames: Set<string>) {
+  let candidate = base;
+  let suffix = 2;
+
+  while (usedUsernames.has(candidate)) {
+    const ending = `-${suffix}`;
+    candidate = `${base.slice(0, 32 - ending.length)}${ending}`;
+    suffix += 1;
+  }
+
+  return candidate;
 }
 
 function getNextSaturdayAtEight() {

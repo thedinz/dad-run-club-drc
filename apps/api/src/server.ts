@@ -14,7 +14,7 @@ import {
   type RecurrenceFrequency
 } from "./calendar.js";
 import { corsOrigin, env } from "./config.js";
-import { migrate, pool } from "./db.js";
+import { migrate, normalizeUsername, pool } from "./db.js";
 import { fetchInstagramMedia, getInstagramFeed } from "./instagram.js";
 import {
   getTokenFromRequest,
@@ -30,16 +30,30 @@ import { hashPassword, verifyPassword } from "./security.js";
 
 const mediaRoot = path.resolve(env.mediaStoragePath);
 
+const usernameSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(32)
+  .regex(
+    /^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$/,
+    "Username can use letters, numbers, dots, dashes, and underscores"
+  );
+
+const memberPasswordSchema = z.string().min(8).max(256);
+
 const registerSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
   email: z.string().trim().email(),
+  username: usernameSchema,
+  password: memberPasswordSchema,
   inviteCode: z.string().trim().min(2)
 });
 
 const userLoginSchema = z.object({
-  email: z.string().trim().email(),
-  inviteCode: z.string().trim().min(2)
+  username: z.string().trim().min(1),
+  password: z.string().min(1)
 });
 
 const adminLoginSchema = z.object({
@@ -50,7 +64,9 @@ const adminLoginSchema = z.object({
 const userSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
-  email: z.string().trim().email()
+  email: z.string().trim().email(),
+  username: usernameSchema,
+  password: memberPasswordSchema.optional()
 });
 
 const attachmentSchema = z.object({
@@ -139,6 +155,7 @@ fastify.get("/health", async () => ({
 fastify.post("/auth/register", async (request, reply) => {
   const body = registerSchema.parse(request.body);
   const email = body.email.toLowerCase();
+  const username = normalizeUsername(body.username);
   const client = await pool.connect();
 
   try {
@@ -170,23 +187,31 @@ fastify.post("/auth/register", async (request, reply) => {
     }
 
     const existingUser = await client.query<UserRow>(
-      `SELECT id, first_name, last_name, email, created_at
+      `SELECT id, first_name, last_name, username, email, password_hash, created_at
        FROM users
-       WHERE email = $1`,
-      [email]
+       WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($2)`,
+      [email, username]
     );
 
     if (existingUser.rows[0]) {
-      await client.query("COMMIT");
-      const user = userFromRow(existingUser.rows[0]);
-      return reply.send({ token: signSession(user), user });
+      await client.query("ROLLBACK");
+      return reply
+        .code(409)
+        .send({ error: "That email or username is already registered" });
     }
 
     const userResult = await client.query(
-      `INSERT INTO users (id, first_name, last_name, email)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, first_name, last_name, email, created_at`,
-      [randomUUID(), body.firstName, body.lastName, email]
+      `INSERT INTO users (id, first_name, last_name, username, email, password_hash)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, first_name, last_name, username, email, password_hash, created_at`,
+      [
+        randomUUID(),
+        body.firstName,
+        body.lastName,
+        username,
+        email,
+        hashPassword(body.password)
+      ]
     );
 
     await client.query(
@@ -200,7 +225,9 @@ fastify.post("/auth/register", async (request, reply) => {
   } catch (error) {
     await client.query("ROLLBACK");
     if (isUniqueViolation(error)) {
-      return reply.code(409).send({ error: "That email is already registered" });
+      return reply
+        .code(409)
+        .send({ error: "That email or username is already registered" });
     }
 
     request.log.error(error);
@@ -212,32 +239,20 @@ fastify.post("/auth/register", async (request, reply) => {
 
 fastify.post("/auth/login", async (request, reply) => {
   const body = userLoginSchema.parse(request.body);
-  const email = body.email.toLowerCase();
-
-  const invite = await pool.query<InviteRow>(
-    `SELECT * FROM invite_codes
-     WHERE UPPER(code) = UPPER($1)`,
-    [body.inviteCode]
-  );
-  const inviteRow = invite.rows[0];
-
-  if (!inviteRow || !inviteRow.active) {
-    return reply.code(400).send({ error: "Invite code is not valid" });
-  }
-
-  if (inviteRow.expires_at && new Date(inviteRow.expires_at) < new Date()) {
-    return reply.code(400).send({ error: "Invite code has expired" });
-  }
+  const username = body.username.toLowerCase();
 
   const result = await pool.query<UserRow>(
-    `SELECT id, first_name, last_name, email, created_at
+    `SELECT id, first_name, last_name, username, email, password_hash, created_at
      FROM users
-     WHERE email = $1`,
-    [email]
+     WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)`,
+    [username]
   );
 
-  if (!result.rows[0]) {
-    return reply.code(404).send({ error: "No member found for that email" });
+  if (
+    !result.rows[0] ||
+    !verifyPassword(body.password, result.rows[0].password_hash)
+  ) {
+    return reply.code(401).send({ error: "Invalid username or password" });
   }
 
   const user = userFromRow(result.rows[0]);
@@ -554,19 +569,32 @@ fastify.get("/admin/users", { preHandler: requireAdmin }, async () => {
 
 fastify.post("/admin/users", { preHandler: requireAdmin }, async (request, reply) => {
   const body = userSchema.parse(request.body);
+  if (!body.password) {
+    return reply.code(400).send({ error: "Password is required" });
+  }
 
   try {
     const result = await pool.query<UserRow>(
-      `INSERT INTO users (id, first_name, last_name, email)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users
+        (id, first_name, last_name, username, email, password_hash)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [randomUUID(), body.firstName, body.lastName, body.email.toLowerCase()]
+      [
+        randomUUID(),
+        body.firstName,
+        body.lastName,
+        normalizeUsername(body.username),
+        body.email.toLowerCase(),
+        hashPassword(body.password)
+      ]
     );
 
     return { user: userFromRow(result.rows[0]) };
   } catch (error) {
     if (isUniqueViolation(error)) {
-      return reply.code(409).send({ error: "That email is already registered" });
+      return reply
+        .code(409)
+        .send({ error: "That email or username is already registered" });
     }
     throw error;
   }
@@ -578,19 +606,44 @@ fastify.put(
   async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = userSchema.parse(request.body);
-    const result = await pool.query<UserRow>(
-      `UPDATE users
-       SET first_name = $2, last_name = $3, email = $4
-       WHERE id = $1
-       RETURNING *`,
-      [id, body.firstName, body.lastName, body.email.toLowerCase()]
-    );
+    const values: unknown[] = [
+      id,
+      body.firstName,
+      body.lastName,
+      normalizeUsername(body.username),
+      body.email.toLowerCase()
+    ];
 
-    if (result.rowCount === 0) {
-      return reply.code(404).send({ error: "User not found" });
+    if (body.password) {
+      values.push(hashPassword(body.password));
     }
 
-    return { user: userFromRow(result.rows[0]) };
+    try {
+      const result = await pool.query<UserRow>(
+        `UPDATE users
+         SET first_name = $2,
+             last_name = $3,
+             username = $4,
+             email = $5${body.password ? `, password_hash = $6` : ""}
+         WHERE id = $1
+         RETURNING *`,
+        values
+      );
+
+      if (result.rowCount === 0) {
+        return reply.code(404).send({ error: "User not found" });
+      }
+
+      return { user: userFromRow(result.rows[0]) };
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply
+          .code(409)
+          .send({ error: "That email or username is already registered" });
+      }
+
+      throw error;
+    }
   }
 );
 
@@ -952,7 +1005,9 @@ function userFromRow(row: UserRow) {
     id: row.id,
     firstName: row.first_name,
     lastName: row.last_name,
+    username: row.username,
     email: row.email,
+    passwordSet: Boolean(row.password_hash),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
     messageCount:
       row.message_count === undefined ? undefined : Number(row.message_count),
@@ -1062,7 +1117,9 @@ type UserRow = {
   id: string;
   first_name: string;
   last_name: string;
+  username: string;
   email: string;
+  password_hash: string;
   created_at?: Date;
   message_count?: number;
   media_count?: number;

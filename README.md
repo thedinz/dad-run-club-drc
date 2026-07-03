@@ -3,7 +3,7 @@
 First version of Dad Run Club, a monorepo with:
 
 - `apps/mobile`: Expo iPhone app with Feed, Chat, and Calendar tabs.
-- `apps/api`: Fastify API with Postgres, invite-code signup, chat, calendar events, and Instagram feed proxy.
+- `apps/api`: Fastify API with Postgres, invite-code signup, password login, chat, calendar events, and Instagram feed proxy.
 - `apps/web`: Next.js landing page at `/` and admin dashboard at `/admin`.
 
 ## What is working
@@ -12,8 +12,9 @@ First version of Dad Run Club, a monorepo with:
 - Admin dashboard is available at `/admin`.
 - Admin login defaults to `admin/admin` on first boot and can be changed in Settings.
 - Admin can create invite codes, manage users, manage media, and manage calendar events.
-- Users can sign up in the mobile app with first name, last name, email, and invite code.
-- Chat works over Socket.IO after signup and supports text, emoji, pasted text, images, and GIF attachments.
+- Users can sign up in the mobile app with first name, last name, username, email, password, and invite code.
+- Users sign in with username-or-email plus password; invite codes are only used to create accounts.
+- Chat works through the API after login and supports text, emoji, pasted text, images, and GIF attachments.
 - Chat/media retention is configurable in admin from 30 to 1095 days.
 - Calendar supports one-time, daily, weekly, and monthly events.
 - Recurring calendar events can be deleted as one occurrence or as the full series.
@@ -77,7 +78,7 @@ Default first-run admin login:
 admin/admin
 ```
 
-Default seeded invite code:
+Default seeded invite code for creating member accounts:
 
 ```bash
 DRC-FOUNDERS
@@ -170,7 +171,6 @@ docker compose -f docker-compose.dev.yml up --build
 
 ## Early decisions still needed
 
-- Decide how production auth should work after signup: password, magic link, or Apple/Google sign-in.
 - Get the original high-resolution logo file for App Store quality icons.
 - Create Meta/Instagram API credentials for real feed sync.
 - Decide whether all members can create calendar events or only admins.
