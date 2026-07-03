@@ -56,7 +56,7 @@ Install dependencies:
 pnpm install
 ```
 
-Run the Docker stack:
+Run the local source-build Docker stack:
 
 ```bash
 pnpm docker:up
@@ -125,14 +125,14 @@ pnpm build
 
 ## Docker image deployment path
 
-The Compose file includes image names:
+The root `docker-compose.yml` is the image-based server Compose file. It uses:
 
 - `ghcr.io/thedinz/dad-run-club-drc-api`
 - `ghcr.io/thedinz/dad-run-club-drc-web`
 
-The GitHub Actions workflow builds and pushes those images on pushes to `main`. A server can later run a Compose file that references those GHCR images directly.
+The GitHub Actions workflow builds and pushes those images on pushes to `main`.
 
-For an image-based dev server, copy `deploy/docker-compose.images.yml` and create a `.env` next to it:
+On your server, put this next to `docker-compose.yml` as `.env`:
 
 ```bash
 POSTGRES_PASSWORD=replace-me
@@ -146,11 +146,18 @@ CORS_ORIGIN=*
 Then run:
 
 ```bash
-docker compose -f docker-compose.images.yml pull
-docker compose -f docker-compose.images.yml up -d
+docker login ghcr.io
+docker compose pull
+docker compose up -d
 ```
 
 Expose only the web service through your reverse proxy. The web container forwards `/api/backend` to the API container internally.
+
+For local builds from source, use `docker-compose.dev.yml`:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
 
 ## Early decisions still needed
 

@@ -12,8 +12,9 @@
     "db:seed": "pnpm --filter @drc/api db:seed",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r --filter @drc/api --filter @drc/web build",
-    "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down"
+    "docker:up": "docker compose -f docker-compose.dev.yml up --build",
+    "docker:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:prod": "docker compose up -d"
   },
   "devDependencies": {
     "prettier": "^3.6.2"
