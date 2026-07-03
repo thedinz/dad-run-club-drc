@@ -37,6 +37,11 @@ const registerSchema = z.object({
   inviteCode: z.string().trim().min(2)
 });
 
+const userLoginSchema = z.object({
+  email: z.string().trim().email(),
+  inviteCode: z.string().trim().min(2)
+});
+
 const adminLoginSchema = z.object({
   username: z.string().trim().min(1),
   password: z.string().min(1)
@@ -203,6 +208,40 @@ fastify.post("/auth/register", async (request, reply) => {
   } finally {
     client.release();
   }
+});
+
+fastify.post("/auth/login", async (request, reply) => {
+  const body = userLoginSchema.parse(request.body);
+  const email = body.email.toLowerCase();
+
+  const invite = await pool.query<InviteRow>(
+    `SELECT * FROM invite_codes
+     WHERE UPPER(code) = UPPER($1)`,
+    [body.inviteCode]
+  );
+  const inviteRow = invite.rows[0];
+
+  if (!inviteRow || !inviteRow.active) {
+    return reply.code(400).send({ error: "Invite code is not valid" });
+  }
+
+  if (inviteRow.expires_at && new Date(inviteRow.expires_at) < new Date()) {
+    return reply.code(400).send({ error: "Invite code has expired" });
+  }
+
+  const result = await pool.query<UserRow>(
+    `SELECT id, first_name, last_name, email, created_at
+     FROM users
+     WHERE email = $1`,
+    [email]
+  );
+
+  if (!result.rows[0]) {
+    return reply.code(404).send({ error: "No member found for that email" });
+  }
+
+  const user = userFromRow(result.rows[0]);
+  return { token: signSession(user), user };
 });
 
 fastify.get("/auth/me", { preHandler: requireUser }, async (request) => ({

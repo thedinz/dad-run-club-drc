@@ -263,6 +263,7 @@ export default function ChatScreen() {
 }
 
 function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
+  const [mode, setMode] = useState<"login" | "join">("login");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -270,20 +271,30 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function signUp() {
+  async function submit() {
     setSaving(true);
     setError("");
 
     try {
-      const session = await api<Session>("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          firstName,
-          lastName,
-          email,
-          inviteCode
-        })
-      });
+      const session = await api<Session>(
+        mode === "login" ? "/auth/login" : "/auth/register",
+        {
+          method: "POST",
+          body: JSON.stringify(
+            mode === "login"
+              ? {
+                  email,
+                  inviteCode
+                }
+              : {
+                  firstName,
+                  lastName,
+                  email,
+                  inviteCode
+                }
+          )
+        }
+      );
 
       await setStoredItem("drc-session", JSON.stringify(session));
       onSignedIn(session);
@@ -299,24 +310,32 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
       <View style={styles.signupShell}>
         <View style={styles.signupPanel}>
           <Text style={styles.kicker}>Members only</Text>
-          <Text style={styles.title}>Join DRC chat</Text>
-          <Text style={styles.signupCopy}>
-            Use your invite code to unlock chat and event tools.
+          <Text style={styles.title}>
+            {mode === "login" ? "Sign in to chat" : "Join DRC chat"}
           </Text>
-          <TextInput
-            value={firstName}
-            onChangeText={setFirstName}
-            placeholder="First name"
-            placeholderTextColor={colors.muted}
-            style={styles.input}
-          />
-          <TextInput
-            value={lastName}
-            onChangeText={setLastName}
-            placeholder="Last name"
-            placeholderTextColor={colors.muted}
-            style={styles.input}
-          />
+          <Text style={styles.signupCopy}>
+            {mode === "login"
+              ? "Already added by an admin? Use your email and club invite code."
+              : "Use your invite code to unlock chat and event tools."}
+          </Text>
+          {mode === "join" ? (
+            <>
+              <TextInput
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="First name"
+                placeholderTextColor={colors.muted}
+                style={styles.input}
+              />
+              <TextInput
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Last name"
+                placeholderTextColor={colors.muted}
+                style={styles.input}
+              />
+            </>
+          ) : null}
           <TextInput
             autoCapitalize="none"
             keyboardType="email-address"
@@ -337,11 +356,25 @@ function Signup({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <TouchableOpacity
             disabled={saving}
-            onPress={signUp}
+            onPress={submit}
             style={[styles.primaryButton, saving && styles.disabled]}
           >
             <Text style={styles.primaryButtonText}>
-              {saving ? "Joining..." : "Join"}
+              {saving ? "Working..." : mode === "login" ? "Sign in" : "Join"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            disabled={saving}
+            onPress={() => {
+              setError("");
+              setMode(mode === "login" ? "join" : "login");
+            }}
+            style={styles.secondaryAuthButton}
+          >
+            <Text style={styles.secondaryAuthText}>
+              {mode === "login"
+                ? "Need to create an account?"
+                : "Already have an account?"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -530,6 +563,16 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: "#fff",
     fontSize: 16,
+    fontWeight: "900"
+  },
+  secondaryAuthButton: {
+    alignItems: "center",
+    minHeight: 42,
+    justifyContent: "center"
+  },
+  secondaryAuthText: {
+    color: colors.pine,
+    fontSize: 15,
     fontWeight: "900"
   },
   error: {

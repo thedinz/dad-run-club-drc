@@ -9,7 +9,61 @@ export type InstagramPost = {
   timestamp: string;
 };
 
+type FeedResponse = {
+  source: string;
+  username: string;
+  profileUrl: string;
+  note?: string;
+  posts: InstagramPost[];
+};
+
+type PublicInstagramResponse = {
+  data?: {
+    user?: {
+      username?: string;
+      edge_owner_to_timeline_media?: {
+        edges?: Array<{
+          node?: {
+            id?: string;
+            shortcode?: string;
+            display_url?: string;
+            thumbnail_src?: string;
+            is_video?: boolean;
+            __typename?: string;
+            taken_at_timestamp?: number;
+            edge_media_to_caption?: {
+              edges?: Array<{
+                node?: {
+                  text?: string;
+                };
+              }>;
+            };
+          };
+        }>;
+      };
+    };
+  };
+};
+
+const INSTAGRAM_WEB_APP_ID = "936619743392459";
+const CACHE_MS = 5 * 60 * 1000;
+let cachedFeed: { expiresAt: number; value: FeedResponse } | null = null;
+
 export async function getInstagramFeed() {
+  if (cachedFeed && cachedFeed.expiresAt > Date.now()) {
+    return cachedFeed.value;
+  }
+
+  const feed = await loadInstagramFeed();
+  cachedFeed = {
+    expiresAt: Date.now() + CACHE_MS,
+    value: feed
+  };
+
+  return feed;
+}
+
+async function loadInstagramFeed(): Promise<FeedResponse> {
   if (env.instagramAccessToken && env.instagramUserId) {
     try {
       const fields =
@@ -49,7 +103,104 @@ export async function getInstagramFeed() {
     }
   }
 
-  return mockFeed("Instagram API credentials are not configured yet.");
+  try {
+    return await getPublicProfileFeed();
+  } catch (error) {
+    return mockFeed(
+      `Instagram public feed is temporarily unavailable: ${String(error)}`
+    );
+  }
+}
+
+async function getPublicProfileFeed(): Promise<FeedResponse> {
+  const profileUrl = `https://www.instagram.com/${env.instagramUsername}/`;
+  const profileResponse = await fetch(profileUrl, {
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "en-US,en;q=0.9",
+      "user-agent":
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    }
+  });
+
+  if (!profileResponse.ok) {
+    throw new Error(`profile returned ${profileResponse.status}`);
+  }
+
+  const setCookies = getSetCookies(profileResponse.headers);
+  const cookieHeader = cookieHeaderFrom(setCookies);
+  const csrfToken = setCookies
+    .map((cookie) => cookie.match(/csrftoken=([^;]+)/)?.[1])
+    .find(Boolean);
+
+  const infoUrl = new URL(
+    "https://www.instagram.com/api/v1/users/web_profile_info/"
+  );
+  infoUrl.searchParams.set("username", env.instagramUsername);
+
+  const infoResponse = await fetch(infoUrl, {
+    headers: {
+      accept: "application/json",
+      "accept-language": "en-US,en;q=0.9",
+      referer: profileUrl,
+      "user-agent":
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      "x-ig-app-id": INSTAGRAM_WEB_APP_ID,
+      "x-requested-with": "XMLHttpRequest",
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
+      ...(csrfToken ? { "x-csrftoken": csrfToken } : {})
+    }
+  });
+
+  if (!infoResponse.ok) {
+    throw new Error(`profile info returned ${infoResponse.status}`);
+  }
+
+  const payload = (await infoResponse.json()) as PublicInstagramResponse;
+  const user = payload.data?.user;
+  const edges = user?.edge_owner_to_timeline_media?.edges ?? [];
+  const posts = edges.flatMap((edge): InstagramPost[] => {
+    const node = edge.node;
+    if (!node?.id || !node.shortcode) {
+      return [];
+    }
+
+    return [
+      {
+        id: node.id,
+        caption: node.edge_media_to_caption?.edges?.[0]?.node?.text ?? "",
+        imageUrl: node.display_url ?? node.thumbnail_src ?? null,
+        permalink: `https://www.instagram.com/p/${node.shortcode}/`,
+        mediaType: node.is_video ? "VIDEO" : node.__typename ?? "IMAGE",
+        timestamp: new Date(
+          (node.taken_at_timestamp ?? Date.now() / 1000) * 1000
+        ).toISOString()
+      }
+    ];
+  });
+
+  if (posts.length === 0) {
+    throw new Error("no public posts returned");
+  }
+
+  return {
+    source: "instagram-public",
+    username: user?.username ?? env.instagramUsername,
+    profileUrl,
+    posts
+  };
+}
+
+function getSetCookies(headers: Headers) {
+  const withGetSetCookie = headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+
+  return withGetSetCookie.getSetCookie?.() ?? [];
+}
+
+function cookieHeaderFrom(setCookies: string[]) {
+  return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
 }
 
 function mockFeed(note: string) {
