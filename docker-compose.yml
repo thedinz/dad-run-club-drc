@@ -45,7 +45,7 @@ services:
       API_INTERNAL_URL: http://api:4000
       NEXT_PUBLIC_API_URL: /api/backend
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-6464}:3000"
     depends_on:
       - api
 

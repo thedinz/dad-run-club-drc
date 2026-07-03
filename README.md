@@ -136,7 +136,7 @@ The repository and container packages are public, so the server does not need a 
 One-liner for a new dev server:
 
 ```bash
-mkdir -p ~/drc && cd ~/drc && curl -fsSLO https://raw.githubusercontent.com/thedinz/dad-run-club-drc/main/docker-compose.yml && printf "POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\nADMIN_USERNAME=admin\nADMIN_PASSWORD=admin\nSEED_INVITE_CODE=DRC-FOUNDERS\nCORS_ORIGIN=*\n" "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env && docker compose pull && docker compose up -d
+mkdir -p ~/drc && cd ~/drc && curl -fsSLO https://raw.githubusercontent.com/thedinz/dad-run-club-drc/main/docker-compose.yml && printf "POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\nADMIN_USERNAME=admin\nADMIN_PASSWORD=admin\nSEED_INVITE_CODE=DRC-FOUNDERS\nCORS_ORIGIN=*\nWEB_PORT=6464\n" "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env && docker compose pull && docker compose up -d
 ```
 
 Or, if you want to write the files manually, put this next to `docker-compose.yml` as `.env`:
@@ -148,6 +148,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin
 SEED_INVITE_CODE=DRC-FOUNDERS
 CORS_ORIGIN=*
+WEB_PORT=6464
 ```
 
 Then run:
@@ -157,7 +158,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Expose only the web service through your reverse proxy. The web container forwards `/api/backend` to the API container internally.
+Expose only the web service through your reverse proxy. By default the host port is `6464`, so point the proxy at `http://SERVER_IP:6464`. The web container forwards `/api/backend` to the API container internally.
 
 For local builds from source, use `docker-compose.dev.yml`:
 
