@@ -121,10 +121,9 @@ export async function getInstagramFeed() {
     );
     const feed =
       fallback ??
-      mockFeed(
-        settings,
-        unavailableNote
-      );
+      (shouldUseDemoFallback(settings)
+        ? mockFeed(settings, unavailableNote)
+        : unavailableFeed(settings, unavailableNote));
 
     cachedFeed = {
       expiresAt: Date.now() + ERROR_CACHE_MS,
@@ -460,6 +459,10 @@ function profileUrl(username: string) {
   return `https://www.instagram.com/${username}/`;
 }
 
+function shouldUseDemoFallback(settings: InstagramSettings) {
+  return settings.feedMode === "auto";
+}
+
 class InstagramFetchError extends Error {
   constructor(
     public target: string,
@@ -578,5 +581,15 @@ function mockFeed(settings: InstagramSettings, note: string) {
     profileUrl: profileUrl(settings.username),
     note,
     posts
+  };
+}
+
+function unavailableFeed(settings: InstagramSettings, note: string): FeedResponse {
+  return {
+    source: "instagram-unavailable",
+    username: settings.username,
+    profileUrl: profileUrl(settings.username),
+    note,
+    posts: []
   };
 }

@@ -35,7 +35,7 @@ For app testing, you can force a built-in photo demo feed:
 INSTAGRAM_FEED_MODE=demo
 ```
 
-Use `INSTAGRAM_FEED_MODE=auto` or omit the variable to try the live Instagram path.
+Use `INSTAGRAM_FEED_MODE=auto` or omit the variable to try the live Instagram path. `auto` may fall back to demo photos when no live or saved feed is available. `public` and `api` are strict modes: they do not fall back to demo photos when the selected live source fails.
 These values can also be managed in `/admin` under Settings after the stack is running. The `.env` values are used as first-run/bootstrap defaults.
 
 To force the official API path, add Meta/Instagram API credentials:
