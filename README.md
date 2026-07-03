@@ -27,7 +27,15 @@ The app uses the public Instagram profile:
 
 `https://www.instagram.com/dadrunclubplymouth/`
 
-The profile image from Instagram is committed as the first logo asset. The API first uses the official Meta/Instagram API when credentials are provided. Without credentials, it uses a cached best-effort read from Instagram's public web profile. If Instagram changes or rate-limits that public endpoint, the API serves the last saved good feed when available, then falls back to local placeholder cards and still links out to the profile.
+The profile image from Instagram is committed as the first logo asset. The API first uses the official Meta/Instagram API when credentials are provided. Without credentials, it uses a cached best-effort read from Instagram's public web profile. If Instagram changes or rate-limits that public endpoint, the API serves the last saved good feed when available, then falls back to built-in demo photo cards and still links out to the profile.
+
+For app testing, you can force a built-in photo demo feed:
+
+```bash
+INSTAGRAM_FEED_MODE=demo
+```
+
+Use `INSTAGRAM_FEED_MODE=auto` or omit the variable to try the live Instagram path.
 
 To force the official API path, add Meta/Instagram API credentials:
 
@@ -35,6 +43,7 @@ To force the official API path, add Meta/Instagram API credentials:
 INSTAGRAM_ACCESS_TOKEN=...
 INSTAGRAM_USER_ID=...
 INSTAGRAM_GRAPH_BASE_URL=https://graph.facebook.com/v20.0
+INSTAGRAM_FEED_MODE=auto
 ```
 
 Then restart the API. The mobile app and admin dashboard already call `/instagram/feed`.
@@ -139,7 +148,7 @@ The repository and container packages are public, so the server does not need a 
 One-liner for a new dev server:
 
 ```bash
-mkdir -p ~/drc && cd ~/drc && curl -fsSLO https://raw.githubusercontent.com/thedinz/dad-run-club-drc/main/docker-compose.yml && printf "POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\nADMIN_USERNAME=admin\nADMIN_PASSWORD=admin\nSEED_INVITE_CODE=DRC-FOUNDERS\nCORS_ORIGIN=*\nWEB_PORT=6464\n" "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env && docker compose pull && docker compose up -d
+mkdir -p ~/drc && cd ~/drc && curl -fsSLO https://raw.githubusercontent.com/thedinz/dad-run-club-drc/main/docker-compose.yml && printf "POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\nADMIN_USERNAME=admin\nADMIN_PASSWORD=admin\nSEED_INVITE_CODE=DRC-FOUNDERS\nCORS_ORIGIN=*\nWEB_PORT=6464\nINSTAGRAM_FEED_MODE=auto\n" "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env && docker compose pull && docker compose up -d
 ```
 
 Or, if you want to write the files manually, put this next to `docker-compose.yml` as `.env`:
@@ -152,6 +161,7 @@ ADMIN_PASSWORD=admin
 SEED_INVITE_CODE=DRC-FOUNDERS
 CORS_ORIGIN=*
 WEB_PORT=6464
+INSTAGRAM_FEED_MODE=auto
 ```
 
 Then run:

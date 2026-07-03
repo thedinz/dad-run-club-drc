@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { Server as SocketIOServer } from "socket.io";
@@ -29,6 +30,14 @@ import {
 import { hashPassword, verifyPassword } from "./security.js";
 
 const mediaRoot = path.resolve(env.mediaStoragePath);
+const instagramDemoRoot = fileURLToPath(
+  new URL("../assets/instagram-demo/", import.meta.url)
+);
+const instagramDemoFiles = new Set([
+  "pre-run.png",
+  "waterfront-run.png",
+  "post-run.png"
+]);
 
 const usernameSchema = z
   .string()
@@ -298,6 +307,18 @@ fastify.get("/instagram/media", async (request, reply) => {
     request.log.warn(error);
     return reply.code(404).send({ error: "Instagram media unavailable" });
   }
+});
+
+fastify.get("/instagram/demo/:file", async (request, reply) => {
+  const { file } = request.params as { file: string };
+  if (!instagramDemoFiles.has(file)) {
+    return reply.code(404).send({ error: "Demo image not found" });
+  }
+
+  return reply
+    .header("content-type", "image/png")
+    .header("cache-control", "public, max-age=86400")
+    .send(createReadStream(path.join(instagramDemoRoot, file)));
 });
 
 fastify.get("/chat/messages", { preHandler: requireUser }, async (request) => {

@@ -90,6 +90,12 @@ export async function getInstagramFeed() {
 }
 
 async function loadInstagramFeed(): Promise<FeedResponse> {
+  if (env.instagramFeedMode === "demo") {
+    return mockFeed(
+      "Showing demo feed photos for app testing. Switch INSTAGRAM_FEED_MODE back to auto when Instagram API access is ready."
+    );
+  }
+
   if (env.instagramAccessToken && env.instagramUserId) {
     return getOfficialApiFeed();
   }
@@ -227,7 +233,7 @@ function proxiedInstagramImageUrl(url: string | null | undefined) {
 }
 
 async function savePersistedFeed(feed: FeedResponse) {
-  if (!feed.posts.length || feed.source === "mock") {
+  if (!feed.posts.length || feed.source === "demo") {
     return;
   }
 
@@ -325,28 +331,28 @@ function mockFeed(note: string) {
 
   const posts: InstagramPost[] = [
     {
-      id: "mock-saturday",
+      id: "demo-pre-run",
       caption:
         "Saturday mornings at 8am. Meet at Vela Juice Bar and bring whatever pace you have that day.",
-      imageUrl: null,
+      imageUrl: "/instagram/demo/pre-run.png",
       permalink: `https://www.instagram.com/${env.instagramUsername}/`,
       mediaType: "IMAGE",
       timestamp: now.toISOString()
     },
     {
-      id: "mock-common-dad",
+      id: "demo-waterfront-run",
       caption:
-        "Dad Run Club Plymouth is getting the crew together for easy miles, coffee, and community.",
-      imageUrl: null,
+        "Easy miles, stroller miles, comeback miles. The point is showing up together.",
+      imageUrl: "/instagram/demo/waterfront-run.png",
       permalink: `https://www.instagram.com/${env.instagramUsername}/`,
       mediaType: "IMAGE",
       timestamp: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString()
     },
     {
-      id: "mock-welcome",
+      id: "demo-post-run",
       caption:
-        "New runners, stroller runners, and comeback runners are welcome. The group starts together and nobody has to prove anything.",
-      imageUrl: null,
+        "Post-run smoothies, coffee, and a few minutes where nobody is asking you to find their shoes.",
+      imageUrl: "/instagram/demo/post-run.png",
       permalink: `https://www.instagram.com/${env.instagramUsername}/`,
       mediaType: "IMAGE",
       timestamp: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString()
@@ -354,7 +360,7 @@ function mockFeed(note: string) {
   ];
 
   return {
-    source: "mock",
+    source: "demo",
     username: env.instagramUsername,
     profileUrl: `https://www.instagram.com/${env.instagramUsername}/`,
     note,

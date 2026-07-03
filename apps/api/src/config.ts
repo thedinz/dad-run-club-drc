@@ -15,6 +15,7 @@ export const env = {
   mediaStoragePath: process.env.MEDIA_STORAGE_PATH ?? "./storage/media",
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES ?? 10 * 1024 * 1024),
   instagramUsername: process.env.INSTAGRAM_USERNAME ?? "dadrunclubplymouth",
+  instagramFeedMode: process.env.INSTAGRAM_FEED_MODE ?? "auto",
   instagramAccessToken: process.env.INSTAGRAM_ACCESS_TOKEN ?? "",
   instagramUserId: process.env.INSTAGRAM_USER_ID ?? "",
   instagramGraphBaseUrl:
