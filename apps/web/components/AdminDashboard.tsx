@@ -36,6 +36,16 @@ type Summary = {
     username: string;
     profileUrl: string;
     note?: string;
+    diagnostics?: {
+      status: "unknown" | "ok" | "error";
+      checkedAt: string | null;
+      lastSuccessAt: string | null;
+      lastErrorAt: string | null;
+      mode: InstagramFeedMode | null;
+      source: string | null;
+      statusCode: number | null;
+      error: string | null;
+    };
   };
 };
 
@@ -646,6 +656,24 @@ function InstagramPanel({ summary }: { summary: Summary | null }) {
       <p className="body-copy">
         Feed source: <strong>{summary?.instagram.source ?? "unknown"}</strong>
       </p>
+      {summary?.instagram.diagnostics ? (
+        <div className="diagnostic-list">
+          <span>Status: {summary.instagram.diagnostics.status}</span>
+          <span>Mode: {summary.instagram.diagnostics.mode ?? "unknown"}</span>
+          <span>
+            HTTP status: {summary.instagram.diagnostics.statusCode ?? "none"}
+          </span>
+          <span>
+            Last checked:{" "}
+            {summary.instagram.diagnostics.checkedAt
+              ? formatDate(summary.instagram.diagnostics.checkedAt)
+              : "not yet"}
+          </span>
+          {summary.instagram.diagnostics.error ? (
+            <span>Error: {summary.instagram.diagnostics.error}</span>
+          ) : null}
+        </div>
+      ) : null}
       {summary?.instagram.note ? <p className="notice">{summary.instagram.note}</p> : null}
     </div>
   );

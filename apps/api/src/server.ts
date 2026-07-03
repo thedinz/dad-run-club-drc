@@ -19,6 +19,7 @@ import { migrate, normalizeUsername, pool } from "./db.js";
 import {
   clearInstagramFeedCache,
   fetchInstagramMedia,
+  getInstagramDiagnostics,
   getInstagramFeed,
   normalizeInstagramUsername
 } from "./instagram.js";
@@ -525,7 +526,8 @@ fastify.get("/admin/summary", { preHandler: requireAdmin }, async () => {
       source: feed.source,
       username: feed.username,
       profileUrl: feed.profileUrl,
-      note: "note" in feed ? feed.note : undefined
+      note: "note" in feed ? feed.note : undefined,
+      diagnostics: getInstagramDiagnostics()
     }
   };
 });

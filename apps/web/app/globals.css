@@ -275,6 +275,19 @@ time {
   padding: 12px;
 }
 
+.diagnostic-list {
+  background: #fafbf8;
+  border: 1px solid #edf1ed;
+  border-radius: 8px;
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  gap: 6px;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+  padding: 12px;
+}
+
 .stack-form,
 .event-form {
   display: grid;

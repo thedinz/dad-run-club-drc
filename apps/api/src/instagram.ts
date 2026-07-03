@@ -26,6 +26,17 @@ export type InstagramSettings = {
   graphBaseUrl: string;
 };
 
+export type InstagramDiagnostics = {
+  status: "unknown" | "ok" | "error";
+  checkedAt: string | null;
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  mode: InstagramSettings["feedMode"] | null;
+  source: string | null;
+  statusCode: number | null;
+  error: string | null;
+};
+
 type PublicInstagramResponse = {
   data?: {
     user?: {
@@ -68,6 +79,16 @@ let cachedFeed: {
   settingsKey: string;
   value: FeedResponse;
 } | null = null;
+let diagnostics: InstagramDiagnostics = {
+  status: "unknown",
+  checkedAt: null,
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  mode: null,
+  source: null,
+  statusCode: null,
+  error: null
+};
 
 export async function getInstagramFeed() {
   const settings = await getInstagramSettings();
@@ -83,6 +104,7 @@ export async function getInstagramFeed() {
 
   try {
     const feed = await loadInstagramFeed(settings);
+    recordInstagramSuccess(settings, feed);
     cachedFeed = {
       expiresAt: Date.now() + CACHE_MS,
       settingsKey,
@@ -91,13 +113,17 @@ export async function getInstagramFeed() {
     await savePersistedFeed(settings, feed).catch(() => undefined);
 
     return feed;
-  } catch {
-    const fallback = await loadPersistedFeed(settings).catch(() => null);
+  } catch (error) {
+    recordInstagramError(settings, error);
+    const unavailableNote = feedUnavailableNote(error);
+    const fallback = await loadPersistedFeed(settings, unavailableNote).catch(
+      () => null
+    );
     const feed =
       fallback ??
       mockFeed(
         settings,
-        "Instagram is rate-limiting the public feed right now. Tap the profile button to open the live feed on Instagram."
+        unavailableNote
       );
 
     cachedFeed = {
@@ -112,6 +138,10 @@ export async function getInstagramFeed() {
 
 export function clearInstagramFeedCache() {
   cachedFeed = null;
+}
+
+export function getInstagramDiagnostics() {
+  return diagnostics;
 }
 
 async function loadInstagramFeed(settings: InstagramSettings): Promise<FeedResponse> {
@@ -148,7 +178,7 @@ async function getOfficialApiFeed(
 
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Instagram API returned ${response.status}`);
+    throw new InstagramFetchError("Instagram API", response.status);
   }
 
   const payload = (await response.json()) as {
@@ -182,7 +212,7 @@ async function getPublicProfileFeed(
   });
 
   if (!profileResponse.ok) {
-    throw new Error(`profile returned ${profileResponse.status}`);
+    throw new InstagramFetchError("Instagram profile", profileResponse.status);
   }
 
   const setCookies = getSetCookies(profileResponse.headers);
@@ -210,7 +240,10 @@ async function getPublicProfileFeed(
   });
 
   if (!infoResponse.ok) {
-    throw new Error(`profile info returned ${infoResponse.status}`);
+    throw new InstagramFetchError(
+      "Instagram profile info",
+      infoResponse.status
+    );
   }
 
   const payload = (await infoResponse.json()) as PublicInstagramResponse;
@@ -286,7 +319,7 @@ async function savePersistedFeed(settings: InstagramSettings, feed: FeedResponse
   );
 }
 
-async function loadPersistedFeed(settings: InstagramSettings) {
+async function loadPersistedFeed(settings: InstagramSettings, note: string) {
   const result = await pool.query<{
     payload: FeedResponse | string;
     fetched_at: Date;
@@ -310,7 +343,9 @@ async function loadPersistedFeed(settings: InstagramSettings) {
   return {
     ...payload,
     source: `${payload.source}-stale`,
-    note: `Instagram is rate-limiting the public feed right now. Showing the last saved feed from ${formatCacheDate(row.fetched_at)}.`
+    note: `${note} Showing the last saved feed from ${formatCacheDate(
+      row.fetched_at
+    )}.`
   };
 }
 
@@ -338,7 +373,7 @@ export async function fetchInstagramMedia(url: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`Instagram media returned ${response.status}`);
+    throw new InstagramFetchError("Instagram media", response.status);
   }
 
   const contentType = response.headers.get("content-type") ?? "image/jpeg";
@@ -423,6 +458,85 @@ function normalizedFeedMode(value: string): InstagramSettings["feedMode"] {
 
 function profileUrl(username: string) {
   return `https://www.instagram.com/${username}/`;
+}
+
+class InstagramFetchError extends Error {
+  constructor(
+    public target: string,
+    public statusCode: number
+  ) {
+    super(`${target} returned HTTP ${statusCode}`);
+  }
+}
+
+function feedUnavailableNote(error: unknown) {
+  const { statusCode } = instagramErrorInfo(error);
+
+  if (statusCode === 429) {
+    return "Instagram returned HTTP 429 for the public feed, which means this server is being rate-limited. Tap the profile button to open the live feed on Instagram.";
+  }
+
+  if (statusCode === 404) {
+    return "Instagram returned HTTP 404 for this profile. Check the Instagram username in admin settings.";
+  }
+
+  if (statusCode === 401 || statusCode === 403) {
+    return "Instagram rejected the configured API credentials. Check the access token and user ID in admin settings.";
+  }
+
+  if (statusCode) {
+    return `Instagram returned HTTP ${statusCode} while loading the feed. Check admin diagnostics for the exact source.`;
+  }
+
+  return "Instagram feed could not be loaded. Check admin diagnostics for the exact error.";
+}
+
+function recordInstagramSuccess(
+  settings: InstagramSettings,
+  feed: FeedResponse
+) {
+  const now = new Date().toISOString();
+  diagnostics = {
+    ...diagnostics,
+    status: "ok",
+    checkedAt: now,
+    lastSuccessAt: now,
+    mode: settings.feedMode,
+    source: feed.source,
+    statusCode: null,
+    error: null
+  };
+}
+
+function recordInstagramError(settings: InstagramSettings, error: unknown) {
+  const now = new Date().toISOString();
+  const info = instagramErrorInfo(error);
+  diagnostics = {
+    ...diagnostics,
+    status: "error",
+    checkedAt: now,
+    lastErrorAt: now,
+    mode: settings.feedMode,
+    statusCode: info.statusCode,
+    error: info.message
+  };
+}
+
+function instagramErrorInfo(error: unknown) {
+  if (error instanceof InstagramFetchError) {
+    return {
+      statusCode: error.statusCode,
+      message: error.message
+    };
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const statusMatch = message.match(/(?:HTTP|returned)\s+(\d{3})/i);
+
+  return {
+    statusCode: statusMatch ? Number(statusMatch[1]) : null,
+    message
+  };
 }
 
 function mockFeed(settings: InstagramSettings, note: string) {
