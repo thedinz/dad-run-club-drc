@@ -2,7 +2,7 @@
   "name": "@drc/mobile",
   "version": "0.1.0",
   "private": true,
-  "main": "App.tsx",
+  "main": "expo/AppEntry",
   "scripts": {
     "start": "expo start",
     "ios": "expo start --ios",
@@ -21,6 +21,7 @@
     "react-native": "^0.86.0",
     "react-native-safe-area-context": "^5.8.0",
     "react-native-screens": "^4.25.2",
+    "react-native-web": "^0.21.2",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
