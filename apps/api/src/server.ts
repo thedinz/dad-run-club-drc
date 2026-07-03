@@ -16,7 +16,12 @@ import {
 } from "./calendar.js";
 import { corsOrigin, env } from "./config.js";
 import { migrate, normalizeUsername, pool } from "./db.js";
-import { fetchInstagramMedia, getInstagramFeed } from "./instagram.js";
+import {
+  clearInstagramFeedCache,
+  fetchInstagramMedia,
+  getInstagramFeed,
+  normalizeInstagramUsername
+} from "./instagram.js";
 import {
   getTokenFromRequest,
   getUserFromToken,
@@ -120,7 +125,13 @@ const settingsSchema = z.object({
   adminUsername: z.string().trim().min(1).optional(),
   currentPassword: z.string().optional(),
   newPassword: z.string().min(6).optional(),
-  chatRetentionDays: z.number().int().min(30).max(1095).optional()
+  chatRetentionDays: z.number().int().min(30).max(1095).optional(),
+  instagramUsername: z.string().trim().min(1).optional(),
+  instagramFeedMode: z.enum(["auto", "demo", "api", "public"]).optional(),
+  instagramAccessToken: z.string().optional(),
+  instagramUserId: z.string().trim().optional(),
+  instagramGraphBaseUrl: z.string().trim().url().optional(),
+  clearInstagramAccessToken: z.boolean().optional()
 });
 
 const fastify = Fastify({
@@ -539,6 +550,34 @@ fastify.put("/admin/settings", { preHandler: requireAdmin }, async (request, rep
     updates.push(`chat_retention_days = $${values.length}`);
   }
 
+  if (body.instagramUsername) {
+    values.push(normalizeInstagramUsername(body.instagramUsername));
+    updates.push(`instagram_username = $${values.length}`);
+  }
+
+  if (body.instagramFeedMode) {
+    values.push(body.instagramFeedMode);
+    updates.push(`instagram_feed_mode = $${values.length}`);
+  }
+
+  if (body.instagramUserId !== undefined) {
+    values.push(body.instagramUserId.trim() || null);
+    updates.push(`instagram_user_id = $${values.length}`);
+  }
+
+  if (body.instagramGraphBaseUrl) {
+    values.push(body.instagramGraphBaseUrl.replace(/\/$/, ""));
+    updates.push(`instagram_graph_base_url = $${values.length}`);
+  }
+
+  if (body.clearInstagramAccessToken) {
+    values.push(null);
+    updates.push(`instagram_access_token = $${values.length}`);
+  } else if (body.instagramAccessToken?.trim()) {
+    values.push(body.instagramAccessToken.trim());
+    updates.push(`instagram_access_token = $${values.length}`);
+  }
+
   if (body.newPassword) {
     if (
       !body.currentPassword ||
@@ -563,6 +602,17 @@ fastify.put("/admin/settings", { preHandler: requireAdmin }, async (request, rep
      RETURNING *`,
     values
   );
+
+  if (
+    body.instagramUsername ||
+    body.instagramFeedMode ||
+    body.instagramUserId !== undefined ||
+    body.instagramGraphBaseUrl ||
+    body.instagramAccessToken?.trim() ||
+    body.clearInstagramAccessToken
+  ) {
+    clearInstagramFeedCache();
+  }
 
   return { settings: settingsFromRow(result.rows[0]) };
 });
@@ -1093,8 +1143,28 @@ function settingsFromRow(row: AdminSettingsRow) {
   return {
     adminUsername: row.admin_username,
     chatRetentionDays: row.chat_retention_days,
+    instagram: {
+      username: row.instagram_username,
+      feedMode: row.instagram_feed_mode,
+      accessTokenSet: Boolean(row.instagram_access_token),
+      accessTokenPreview: maskSecret(row.instagram_access_token),
+      userId: row.instagram_user_id ?? "",
+      graphBaseUrl: row.instagram_graph_base_url
+    },
     updatedAt: new Date(row.updated_at).toISOString()
   };
+}
+
+function maskSecret(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  if (value.length <= 8) {
+    return "set";
+  }
+
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
 function extensionForMime(mimeType: string, fileName: string) {
@@ -1190,5 +1260,10 @@ type AdminSettingsRow = {
   admin_username: string;
   password_hash: string;
   chat_retention_days: number;
+  instagram_username: string;
+  instagram_feed_mode: "auto" | "demo" | "api" | "public";
+  instagram_access_token: string | null;
+  instagram_user_id: string | null;
+  instagram_graph_base_url: string;
   updated_at: Date;
 };

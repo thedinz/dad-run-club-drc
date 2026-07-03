@@ -18,6 +18,14 @@ type FeedResponse = {
   posts: InstagramPost[];
 };
 
+export type InstagramSettings = {
+  username: string;
+  feedMode: "auto" | "demo" | "api" | "public";
+  accessToken: string;
+  userId: string;
+  graphBaseUrl: string;
+};
+
 type PublicInstagramResponse = {
   data?: {
     user?: {
@@ -47,7 +55,6 @@ type PublicInstagramResponse = {
 };
 
 const INSTAGRAM_WEB_APP_ID = "936619743392459";
-const INSTAGRAM_PROFILE_URL = `https://www.instagram.com/${env.instagramUsername}/`;
 const PUBLIC_FETCH_HEADERS = {
   accept: "text/html,application/xhtml+xml",
   "accept-language": "en-US,en;q=0.9",
@@ -56,32 +63,46 @@ const PUBLIC_FETCH_HEADERS = {
 };
 const CACHE_MS = 30 * 60 * 1000;
 const ERROR_CACHE_MS = 60 * 60 * 1000;
-let cachedFeed: { expiresAt: number; value: FeedResponse } | null = null;
+let cachedFeed: {
+  expiresAt: number;
+  settingsKey: string;
+  value: FeedResponse;
+} | null = null;
 
 export async function getInstagramFeed() {
-  if (cachedFeed && cachedFeed.expiresAt > Date.now()) {
+  const settings = await getInstagramSettings();
+  const settingsKey = instagramSettingsKey(settings);
+
+  if (
+    cachedFeed &&
+    cachedFeed.settingsKey === settingsKey &&
+    cachedFeed.expiresAt > Date.now()
+  ) {
     return cachedFeed.value;
   }
 
   try {
-    const feed = await loadInstagramFeed();
+    const feed = await loadInstagramFeed(settings);
     cachedFeed = {
       expiresAt: Date.now() + CACHE_MS,
+      settingsKey,
       value: feed
     };
-    await savePersistedFeed(feed).catch(() => undefined);
+    await savePersistedFeed(settings, feed).catch(() => undefined);
 
     return feed;
   } catch {
-    const fallback = await loadPersistedFeed().catch(() => null);
+    const fallback = await loadPersistedFeed(settings).catch(() => null);
     const feed =
       fallback ??
       mockFeed(
+        settings,
         "Instagram is rate-limiting the public feed right now. Tap the profile button to open the live feed on Instagram."
       );
 
     cachedFeed = {
       expiresAt: Date.now() + ERROR_CACHE_MS,
+      settingsKey,
       value: feed
     };
 
@@ -89,26 +110,40 @@ export async function getInstagramFeed() {
   }
 }
 
-async function loadInstagramFeed(): Promise<FeedResponse> {
-  if (env.instagramFeedMode === "demo") {
+export function clearInstagramFeedCache() {
+  cachedFeed = null;
+}
+
+async function loadInstagramFeed(settings: InstagramSettings): Promise<FeedResponse> {
+  if (settings.feedMode === "demo") {
     return mockFeed(
+      settings,
       "Showing demo feed photos for app testing. Switch INSTAGRAM_FEED_MODE back to auto when Instagram API access is ready."
     );
   }
 
-  if (env.instagramAccessToken && env.instagramUserId) {
-    return getOfficialApiFeed();
+  if (
+    settings.feedMode === "api" ||
+    (settings.feedMode === "auto" && settings.accessToken && settings.userId)
+  ) {
+    return getOfficialApiFeed(settings);
   }
 
-  return getPublicProfileFeed();
+  return getPublicProfileFeed(settings);
 }
 
-async function getOfficialApiFeed(): Promise<FeedResponse> {
+async function getOfficialApiFeed(
+  settings: InstagramSettings
+): Promise<FeedResponse> {
+  if (!settings.accessToken || !settings.userId) {
+    throw new Error("Instagram API credentials are missing");
+  }
+
   const fields =
     "id,caption,media_url,permalink,thumbnail_url,timestamp,media_type";
-  const url = new URL(`${env.instagramGraphBaseUrl}/${env.instagramUserId}/media`);
+  const url = new URL(`${settings.graphBaseUrl}/${settings.userId}/media`);
   url.searchParams.set("fields", fields);
-  url.searchParams.set("access_token", env.instagramAccessToken);
+  url.searchParams.set("access_token", settings.accessToken);
   url.searchParams.set("limit", "12");
 
   const response = await fetch(url);
@@ -122,8 +157,8 @@ async function getOfficialApiFeed(): Promise<FeedResponse> {
 
   return {
     source: "instagram-api",
-    username: env.instagramUsername,
-    profileUrl: `https://www.instagram.com/${env.instagramUsername}/`,
+    username: settings.username,
+    profileUrl: profileUrl(settings.username),
     posts: (payload.data ?? []).map((post) => ({
       id: post.id,
       caption: post.caption ?? "",
@@ -131,15 +166,18 @@ async function getOfficialApiFeed(): Promise<FeedResponse> {
         post.media_url ?? post.thumbnail_url ?? null
       ),
       permalink:
-        post.permalink ?? `https://www.instagram.com/${env.instagramUsername}/`,
+        post.permalink ?? profileUrl(settings.username),
       mediaType: post.media_type ?? "IMAGE",
       timestamp: post.timestamp ?? new Date().toISOString()
     }))
   };
 }
 
-async function getPublicProfileFeed(): Promise<FeedResponse> {
-  const profileResponse = await fetch(INSTAGRAM_PROFILE_URL, {
+async function getPublicProfileFeed(
+  settings: InstagramSettings
+): Promise<FeedResponse> {
+  const instagramProfileUrl = profileUrl(settings.username);
+  const profileResponse = await fetch(instagramProfileUrl, {
     headers: PUBLIC_FETCH_HEADERS
   });
 
@@ -156,13 +194,13 @@ async function getPublicProfileFeed(): Promise<FeedResponse> {
   const infoUrl = new URL(
     "https://www.instagram.com/api/v1/users/web_profile_info/"
   );
-  infoUrl.searchParams.set("username", env.instagramUsername);
+  infoUrl.searchParams.set("username", settings.username);
 
   const infoResponse = await fetch(infoUrl, {
     headers: {
       accept: "application/json",
       "accept-language": "en-US,en;q=0.9",
-      referer: INSTAGRAM_PROFILE_URL,
+      referer: instagramProfileUrl,
       "user-agent": PUBLIC_FETCH_HEADERS["user-agent"],
       "x-ig-app-id": INSTAGRAM_WEB_APP_ID,
       "x-requested-with": "XMLHttpRequest",
@@ -206,8 +244,8 @@ async function getPublicProfileFeed(): Promise<FeedResponse> {
 
   return {
     source: "instagram-public",
-    username: user?.username ?? env.instagramUsername,
-    profileUrl: INSTAGRAM_PROFILE_URL,
+    username: user?.username ?? settings.username,
+    profileUrl: instagramProfileUrl,
     posts
   };
 }
@@ -232,7 +270,7 @@ function proxiedInstagramImageUrl(url: string | null | undefined) {
   return `/instagram/media?url=${encodeURIComponent(url)}`;
 }
 
-async function savePersistedFeed(feed: FeedResponse) {
+async function savePersistedFeed(settings: InstagramSettings, feed: FeedResponse) {
   if (!feed.posts.length || feed.source === "demo") {
     return;
   }
@@ -244,11 +282,11 @@ async function savePersistedFeed(feed: FeedResponse) {
      DO UPDATE SET payload = EXCLUDED.payload,
                    fetched_at = EXCLUDED.fetched_at,
                    updated_at = NOW()`,
-    [env.instagramUsername, JSON.stringify(feed)]
+    [settings.username, JSON.stringify(feed)]
   );
 }
 
-async function loadPersistedFeed() {
+async function loadPersistedFeed(settings: InstagramSettings) {
   const result = await pool.query<{
     payload: FeedResponse | string;
     fetched_at: Date;
@@ -256,7 +294,7 @@ async function loadPersistedFeed() {
     `SELECT payload, fetched_at
      FROM instagram_feed_cache
      WHERE username = $1`,
-    [env.instagramUsername]
+    [settings.username]
   );
 
   const row = result.rows[0];
@@ -289,11 +327,12 @@ export async function fetchInstagramMedia(url: string) {
     throw new Error("Unsupported Instagram media URL");
   }
 
+  const settings = await getInstagramSettings();
   const response = await fetch(url, {
     headers: {
       accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
       "accept-language": "en-US,en;q=0.9",
-      referer: INSTAGRAM_PROFILE_URL,
+      referer: profileUrl(settings.username),
       "user-agent": PUBLIC_FETCH_HEADERS["user-agent"]
     }
   });
@@ -326,7 +365,67 @@ function isAllowedInstagramMediaUrl(value: string) {
   }
 }
 
-function mockFeed(note: string) {
+export async function getInstagramSettings(): Promise<InstagramSettings> {
+  const result = await pool.query<{
+    instagram_username: string | null;
+    instagram_feed_mode: string | null;
+    instagram_access_token: string | null;
+    instagram_user_id: string | null;
+    instagram_graph_base_url: string | null;
+  }>(
+    `SELECT instagram_username,
+            instagram_feed_mode,
+            instagram_access_token,
+            instagram_user_id,
+            instagram_graph_base_url
+     FROM admin_settings
+     WHERE id = 'default'`
+  );
+
+  const row = result.rows[0];
+  const feedMode = normalizedFeedMode(
+    row?.instagram_feed_mode ?? env.instagramFeedMode
+  );
+
+  return {
+    username: normalizeInstagramUsername(
+      row?.instagram_username ?? env.instagramUsername
+    ),
+    feedMode,
+    accessToken: row?.instagram_access_token ?? env.instagramAccessToken,
+    userId: row?.instagram_user_id ?? env.instagramUserId,
+    graphBaseUrl:
+      row?.instagram_graph_base_url ??
+      env.instagramGraphBaseUrl ??
+      "https://graph.facebook.com/v20.0"
+  };
+}
+
+function instagramSettingsKey(settings: InstagramSettings) {
+  return [
+    settings.username,
+    settings.feedMode,
+    settings.userId,
+    settings.graphBaseUrl,
+    settings.accessToken ? "token-set" : "token-empty"
+  ].join("|");
+}
+
+export function normalizeInstagramUsername(value: string) {
+  return value.trim().replace(/^@/, "").replace(/\/+$/, "") || env.instagramUsername;
+}
+
+function normalizedFeedMode(value: string): InstagramSettings["feedMode"] {
+  return value === "demo" || value === "api" || value === "public"
+    ? value
+    : "auto";
+}
+
+function profileUrl(username: string) {
+  return `https://www.instagram.com/${username}/`;
+}
+
+function mockFeed(settings: InstagramSettings, note: string) {
   const now = new Date();
 
   const posts: InstagramPost[] = [
@@ -335,7 +434,7 @@ function mockFeed(note: string) {
       caption:
         "Saturday mornings at 8am. Meet at Vela Juice Bar and bring whatever pace you have that day.",
       imageUrl: "/instagram/demo/pre-run.png",
-      permalink: `https://www.instagram.com/${env.instagramUsername}/`,
+      permalink: profileUrl(settings.username),
       mediaType: "IMAGE",
       timestamp: now.toISOString()
     },
@@ -344,7 +443,7 @@ function mockFeed(note: string) {
       caption:
         "Easy miles, stroller miles, comeback miles. The point is showing up together.",
       imageUrl: "/instagram/demo/waterfront-run.png",
-      permalink: `https://www.instagram.com/${env.instagramUsername}/`,
+      permalink: profileUrl(settings.username),
       mediaType: "IMAGE",
       timestamp: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString()
     },
@@ -353,7 +452,7 @@ function mockFeed(note: string) {
       caption:
         "Post-run smoothies, coffee, and a few minutes where nobody is asking you to find their shoes.",
       imageUrl: "/instagram/demo/post-run.png",
-      permalink: `https://www.instagram.com/${env.instagramUsername}/`,
+      permalink: profileUrl(settings.username),
       mediaType: "IMAGE",
       timestamp: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString()
     }
@@ -361,8 +460,8 @@ function mockFeed(note: string) {
 
   return {
     source: "demo",
-    username: env.instagramUsername,
-    profileUrl: `https://www.instagram.com/${env.instagramUsername}/`,
+    username: settings.username,
+    profileUrl: profileUrl(settings.username),
     note,
     posts
   };

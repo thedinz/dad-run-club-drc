@@ -42,8 +42,18 @@ type Summary = {
 type AdminSettings = {
   adminUsername: string;
   chatRetentionDays: number;
+  instagram: {
+    username: string;
+    feedMode: InstagramFeedMode;
+    accessTokenSet: boolean;
+    accessTokenPreview: string;
+    userId: string;
+    graphBaseUrl: string;
+  };
   updatedAt: string;
 };
+
+type InstagramFeedMode = "auto" | "demo" | "api" | "public";
 
 type InviteCode = {
   id: string;
@@ -119,6 +129,21 @@ type UserForm = {
   password: string;
 };
 
+type SettingsForm = {
+  adminUsername: string;
+  currentPassword: string;
+  newPassword: string;
+  chatRetentionDays: number;
+  instagramUsername: string;
+  instagramFeedMode: InstagramFeedMode;
+  instagramAccessToken: string;
+  instagramAccessTokenSet: boolean;
+  instagramAccessTokenPreview: string;
+  clearInstagramAccessToken: boolean;
+  instagramUserId: string;
+  instagramGraphBaseUrl: string;
+};
+
 const blankUser: UserForm = {
   firstName: "",
   lastName: "",
@@ -172,11 +197,19 @@ export default function AdminDashboard({
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [eventForm, setEventForm] = useState<EventForm>(blankEvent);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [settingsForm, setSettingsForm] = useState({
+  const [settingsForm, setSettingsForm] = useState<SettingsForm>({
     adminUsername: "admin",
     currentPassword: "",
     newPassword: "",
-    chatRetentionDays: 365
+    chatRetentionDays: 365,
+    instagramUsername: "dadrunclubplymouth",
+    instagramFeedMode: "auto",
+    instagramAccessToken: "",
+    instagramAccessTokenSet: false,
+    instagramAccessTokenPreview: "",
+    clearInstagramAccessToken: false,
+    instagramUserId: "",
+    instagramGraphBaseUrl: "https://graph.facebook.com/v20.0"
   });
   const [status, setStatus] = useState("Ready");
 
@@ -279,7 +312,16 @@ export default function AdminDashboard({
       setSettingsForm((current) => ({
         ...current,
         adminUsername: summaryData.settings.adminUsername,
-        chatRetentionDays: summaryData.settings.chatRetentionDays
+        chatRetentionDays: summaryData.settings.chatRetentionDays,
+        instagramUsername: summaryData.settings.instagram.username,
+        instagramFeedMode: summaryData.settings.instagram.feedMode,
+        instagramAccessToken: "",
+        instagramAccessTokenSet: summaryData.settings.instagram.accessTokenSet,
+        instagramAccessTokenPreview:
+          summaryData.settings.instagram.accessTokenPreview,
+        clearInstagramAccessToken: false,
+        instagramUserId: summaryData.settings.instagram.userId,
+        instagramGraphBaseUrl: summaryData.settings.instagram.graphBaseUrl
       }));
       setInviteCodes(inviteData.inviteCodes);
       setUsers(userData.users);
@@ -406,13 +448,21 @@ export default function AdminDashboard({
         adminUsername: settingsForm.adminUsername,
         currentPassword: settingsForm.currentPassword || undefined,
         newPassword: settingsForm.newPassword || undefined,
-        chatRetentionDays: Number(settingsForm.chatRetentionDays)
+        chatRetentionDays: Number(settingsForm.chatRetentionDays),
+        instagramUsername: settingsForm.instagramUsername,
+        instagramFeedMode: settingsForm.instagramFeedMode,
+        instagramAccessToken: settingsForm.instagramAccessToken || undefined,
+        clearInstagramAccessToken: settingsForm.clearInstagramAccessToken,
+        instagramUserId: settingsForm.instagramUserId,
+        instagramGraphBaseUrl: settingsForm.instagramGraphBaseUrl
       })
     });
     setSettingsForm((current) => ({
       ...current,
       currentPassword: "",
-      newPassword: ""
+      newPassword: "",
+      instagramAccessToken: "",
+      clearInstagramAccessToken: false
     }));
     await loadDashboard();
   }
@@ -941,20 +991,10 @@ function SettingsPanel({
   onSave,
   setForm
 }: {
-  form: {
-    adminUsername: string;
-    currentPassword: string;
-    newPassword: string;
-    chatRetentionDays: number;
-  };
+  form: SettingsForm;
   onPrune: () => void;
   onSave: (event: FormEvent) => void;
-  setForm: (form: {
-    adminUsername: string;
-    currentPassword: string;
-    newPassword: string;
-    chatRetentionDays: number;
-  }) => void;
+  setForm: (form: SettingsForm) => void;
 }) {
   return (
     <section className="panel">
@@ -996,6 +1036,92 @@ function SettingsPanel({
             }
             type="number"
           />
+        </label>
+        <label>
+          <span>Instagram username</span>
+          <input
+            autoCapitalize="none"
+            value={form.instagramUsername}
+            onChange={(event) =>
+              setForm({ ...form, instagramUsername: event.target.value })
+            }
+          />
+        </label>
+        <label>
+          <span>Instagram feed mode</span>
+          <select
+            value={form.instagramFeedMode}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                instagramFeedMode: event.target.value as InstagramFeedMode
+              })
+            }
+          >
+            <option value="auto">Auto</option>
+            <option value="demo">Demo photos</option>
+            <option value="api">Official API</option>
+            <option value="public">Public web</option>
+          </select>
+        </label>
+        <label>
+          <span>Instagram user ID</span>
+          <input
+            autoCapitalize="none"
+            value={form.instagramUserId}
+            onChange={(event) =>
+              setForm({ ...form, instagramUserId: event.target.value })
+            }
+          />
+        </label>
+        <label>
+          <span>Graph API base URL</span>
+          <input
+            autoCapitalize="none"
+            value={form.instagramGraphBaseUrl}
+            onChange={(event) =>
+              setForm({ ...form, instagramGraphBaseUrl: event.target.value })
+            }
+          />
+        </label>
+        <label className="settings-wide">
+          <span>
+            Instagram access token
+            {form.instagramAccessTokenSet
+              ? ` (${form.instagramAccessTokenPreview})`
+              : ""}
+          </span>
+          <input
+            autoCapitalize="none"
+            autoComplete="off"
+            value={form.instagramAccessToken}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                instagramAccessToken: event.target.value,
+                clearInstagramAccessToken: false
+              })
+            }
+            placeholder={
+              form.instagramAccessTokenSet ? "Leave blank to keep token" : ""
+            }
+            type="password"
+          />
+        </label>
+        <label className="checkbox-label settings-wide">
+          <input
+            checked={form.clearInstagramAccessToken}
+            disabled={!form.instagramAccessTokenSet}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                clearInstagramAccessToken: event.target.checked,
+                instagramAccessToken: ""
+              })
+            }
+            type="checkbox"
+          />
+          <span>Clear saved Instagram access token</span>
         </label>
         <button type="submit">
           <Save size={16} />

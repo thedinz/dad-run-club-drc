@@ -77,6 +77,11 @@ export async function migrate() {
       admin_username TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       chat_retention_days INTEGER NOT NULL DEFAULT 365,
+      instagram_username TEXT NOT NULL DEFAULT 'dadrunclubplymouth',
+      instagram_feed_mode TEXT NOT NULL DEFAULT 'auto',
+      instagram_access_token TEXT,
+      instagram_user_id TEXT,
+      instagram_graph_base_url TEXT NOT NULL DEFAULT 'https://graph.facebook.com/v20.0',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -92,6 +97,11 @@ export async function migrate() {
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+    ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS instagram_username TEXT;
+    ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS instagram_feed_mode TEXT;
+    ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS instagram_access_token TEXT;
+    ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS instagram_user_id TEXT;
+    ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS instagram_graph_base_url TEXT;
   `);
 
   await ensureUserCredentials();
@@ -112,11 +122,44 @@ export async function migrate() {
   if (adminSettings.rowCount === 0) {
     await pool.query(
       `INSERT INTO admin_settings
-        (id, admin_username, password_hash, chat_retention_days)
-       VALUES ('default', $1, $2, 365)`,
-      [env.adminUsername, hashPassword(env.adminPassword)]
+        (id, admin_username, password_hash, chat_retention_days,
+         instagram_username, instagram_feed_mode, instagram_access_token,
+         instagram_user_id, instagram_graph_base_url)
+       VALUES ('default', $1, $2, 365, $3, $4, $5, $6, $7)`,
+      [
+        env.adminUsername,
+        hashPassword(env.adminPassword),
+        env.instagramUsername,
+        env.instagramFeedMode,
+        env.instagramAccessToken || null,
+        env.instagramUserId || null,
+        env.instagramGraphBaseUrl
+      ]
     );
   }
+
+  await pool.query(
+    `UPDATE admin_settings
+     SET instagram_username = COALESCE(NULLIF(instagram_username, ''), $1),
+         instagram_feed_mode = COALESCE(NULLIF(instagram_feed_mode, ''), $2),
+         instagram_access_token = COALESCE(NULLIF(instagram_access_token, ''), NULLIF($3, '')),
+         instagram_user_id = COALESCE(NULLIF(instagram_user_id, ''), NULLIF($4, '')),
+         instagram_graph_base_url = COALESCE(NULLIF(instagram_graph_base_url, ''), $5)
+     WHERE id = 'default'`,
+    [
+      env.instagramUsername,
+      env.instagramFeedMode,
+      env.instagramAccessToken,
+      env.instagramUserId,
+      env.instagramGraphBaseUrl
+    ]
+  );
+
+  await pool.query(`
+    ALTER TABLE admin_settings ALTER COLUMN instagram_username SET NOT NULL;
+    ALTER TABLE admin_settings ALTER COLUMN instagram_feed_mode SET NOT NULL;
+    ALTER TABLE admin_settings ALTER COLUMN instagram_graph_base_url SET NOT NULL;
+  `);
 
   const invite = await pool.query(
     "SELECT id FROM invite_codes WHERE UPPER(code) = UPPER($1)",

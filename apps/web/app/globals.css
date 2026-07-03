@@ -300,10 +300,24 @@ time {
   gap: 6px;
 }
 
+.settings-form .settings-wide {
+  grid-column: span 2;
+}
+
 .settings-form span {
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+}
+
+.settings-form .checkbox-label {
+  align-items: center;
+  display: flex;
+}
+
+.settings-form .checkbox-label input {
+  min-height: auto;
+  width: auto;
 }
 
 .list {
@@ -412,6 +426,10 @@ time {
   }
 
   .event-form textarea {
+    grid-column: auto;
+  }
+
+  .settings-form .settings-wide {
     grid-column: auto;
   }
 
