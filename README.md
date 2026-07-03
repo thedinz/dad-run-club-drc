@@ -27,7 +27,7 @@ The app uses the public Instagram profile:
 
 `https://www.instagram.com/dadrunclubplymouth/`
 
-The profile image from Instagram is committed as the first logo asset. The API first uses the official Meta/Instagram API when credentials are provided. Without credentials, it uses a cached best-effort read from Instagram's public web profile. If Instagram changes or blocks that public endpoint, the app falls back to local placeholder cards and still links out to the profile.
+The profile image from Instagram is committed as the first logo asset. The API first uses the official Meta/Instagram API when credentials are provided. Without credentials, it uses a cached best-effort read from Instagram's public web profile. If Instagram changes or rate-limits that public endpoint, the API serves the last saved good feed when available, then falls back to local placeholder cards and still links out to the profile.
 
 To force the official API path, add Meta/Instagram API credentials:
 

@@ -74,12 +74,29 @@ export default function FeedScreen() {
             </View>
             <TouchableOpacity
               style={styles.profileButton}
-              onPress={() => Linking.openURL(feed?.profileUrl ?? "https://www.instagram.com/dadrunclubplymouth/")}
+              onPress={() =>
+                Linking.openURL(
+                  feed?.profileUrl ??
+                    "https://www.instagram.com/dadrunclubplymouth/"
+                )
+              }
             >
               <Ionicons name="logo-instagram" size={18} color={colors.ink} />
-              <Text style={styles.profileText}>@{feed?.username}</Text>
+              <Text style={styles.profileText}>
+                @{feed?.username ?? "dadrunclubplymouth"}
+              </Text>
             </TouchableOpacity>
             {feed?.note ? <Text style={styles.notice}>{feed.note}</Text> : null}
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyCard}>
+            <Ionicons name="logo-instagram" size={24} color={colors.pine} />
+            <Text style={styles.emptyTitle}>Feed unavailable</Text>
+            <Text style={styles.emptyCopy}>
+              Instagram is not returning public posts right now. The profile button
+              opens the live account.
+            </Text>
           </View>
         }
         renderItem={({ item }) => <PostCard post={item} />}
@@ -194,6 +211,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     color: "#654911",
     padding: 12
+  },
+  emptyCard: {
+    alignItems: "center",
+    backgroundColor: colors.panel,
+    borderColor: colors.line,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+    padding: 18,
+    ...shadows.panel
+  },
+  emptyTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  emptyCopy: {
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: "center"
   },
   card: {
     backgroundColor: colors.panel,

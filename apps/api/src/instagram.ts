@@ -1,4 +1,5 @@
 import { env } from "./config.js";
+import { pool } from "./db.js";
 
 export type InstagramPost = {
   id: string;
@@ -53,7 +54,8 @@ const PUBLIC_FETCH_HEADERS = {
   "user-agent":
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 };
-const CACHE_MS = 5 * 60 * 1000;
+const CACHE_MS = 30 * 60 * 1000;
+const ERROR_CACHE_MS = 60 * 60 * 1000;
 let cachedFeed: { expiresAt: number; value: FeedResponse } | null = null;
 
 export async function getInstagramFeed() {
@@ -61,64 +63,73 @@ export async function getInstagramFeed() {
     return cachedFeed.value;
   }
 
-  const feed = await loadInstagramFeed();
-  cachedFeed = {
-    expiresAt: Date.now() + CACHE_MS,
-    value: feed
-  };
+  try {
+    const feed = await loadInstagramFeed();
+    cachedFeed = {
+      expiresAt: Date.now() + CACHE_MS,
+      value: feed
+    };
+    await savePersistedFeed(feed).catch(() => undefined);
 
-  return feed;
+    return feed;
+  } catch {
+    const fallback = await loadPersistedFeed().catch(() => null);
+    const feed =
+      fallback ??
+      mockFeed(
+        "Instagram is rate-limiting the public feed right now. Tap the profile button to open the live feed on Instagram."
+      );
+
+    cachedFeed = {
+      expiresAt: Date.now() + ERROR_CACHE_MS,
+      value: feed
+    };
+
+    return feed;
+  }
 }
 
 async function loadInstagramFeed(): Promise<FeedResponse> {
   if (env.instagramAccessToken && env.instagramUserId) {
-    try {
-      const fields =
-        "id,caption,media_url,permalink,thumbnail_url,timestamp,media_type";
-      const url = new URL(
-        `${env.instagramGraphBaseUrl}/${env.instagramUserId}/media`
-      );
-      url.searchParams.set("fields", fields);
-      url.searchParams.set("access_token", env.instagramAccessToken);
-      url.searchParams.set("limit", "12");
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Instagram API returned ${response.status}`);
-      }
-
-      const payload = (await response.json()) as {
-        data?: Array<Record<string, string>>;
-      };
-
-      return {
-        source: "instagram-api",
-        username: env.instagramUsername,
-        profileUrl: `https://www.instagram.com/${env.instagramUsername}/`,
-        posts: (payload.data ?? []).map((post) => ({
-          id: post.id,
-          caption: post.caption ?? "",
-          imageUrl: proxiedInstagramImageUrl(
-            post.media_url ?? post.thumbnail_url ?? null
-          ),
-          permalink:
-            post.permalink ?? `https://www.instagram.com/${env.instagramUsername}/`,
-          mediaType: post.media_type ?? "IMAGE",
-          timestamp: post.timestamp ?? new Date().toISOString()
-        }))
-      };
-    } catch (error) {
-      return mockFeed(`Instagram API is configured but failed: ${String(error)}`);
-    }
+    return getOfficialApiFeed();
   }
 
-  try {
-    return await getPublicProfileFeed();
-  } catch (error) {
-    return mockFeed(
-      `Instagram public feed is temporarily unavailable: ${String(error)}`
-    );
+  return getPublicProfileFeed();
+}
+
+async function getOfficialApiFeed(): Promise<FeedResponse> {
+  const fields =
+    "id,caption,media_url,permalink,thumbnail_url,timestamp,media_type";
+  const url = new URL(`${env.instagramGraphBaseUrl}/${env.instagramUserId}/media`);
+  url.searchParams.set("fields", fields);
+  url.searchParams.set("access_token", env.instagramAccessToken);
+  url.searchParams.set("limit", "12");
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Instagram API returned ${response.status}`);
   }
+
+  const payload = (await response.json()) as {
+    data?: Array<Record<string, string>>;
+  };
+
+  return {
+    source: "instagram-api",
+    username: env.instagramUsername,
+    profileUrl: `https://www.instagram.com/${env.instagramUsername}/`,
+    posts: (payload.data ?? []).map((post) => ({
+      id: post.id,
+      caption: post.caption ?? "",
+      imageUrl: proxiedInstagramImageUrl(
+        post.media_url ?? post.thumbnail_url ?? null
+      ),
+      permalink:
+        post.permalink ?? `https://www.instagram.com/${env.instagramUsername}/`,
+      mediaType: post.media_type ?? "IMAGE",
+      timestamp: post.timestamp ?? new Date().toISOString()
+    }))
+  };
 }
 
 async function getPublicProfileFeed(): Promise<FeedResponse> {
@@ -213,6 +224,58 @@ function proxiedInstagramImageUrl(url: string | null | undefined) {
   }
 
   return `/instagram/media?url=${encodeURIComponent(url)}`;
+}
+
+async function savePersistedFeed(feed: FeedResponse) {
+  if (!feed.posts.length || feed.source === "mock") {
+    return;
+  }
+
+  await pool.query(
+    `INSERT INTO instagram_feed_cache (username, payload, fetched_at, updated_at)
+     VALUES ($1, $2::jsonb, NOW(), NOW())
+     ON CONFLICT (username)
+     DO UPDATE SET payload = EXCLUDED.payload,
+                   fetched_at = EXCLUDED.fetched_at,
+                   updated_at = NOW()`,
+    [env.instagramUsername, JSON.stringify(feed)]
+  );
+}
+
+async function loadPersistedFeed() {
+  const result = await pool.query<{
+    payload: FeedResponse | string;
+    fetched_at: Date;
+  }>(
+    `SELECT payload, fetched_at
+     FROM instagram_feed_cache
+     WHERE username = $1`,
+    [env.instagramUsername]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const payload =
+    typeof row.payload === "string"
+      ? (JSON.parse(row.payload) as FeedResponse)
+      : row.payload;
+
+  return {
+    ...payload,
+    source: `${payload.source}-stale`,
+    note: `Instagram is rate-limiting the public feed right now. Showing the last saved feed from ${formatCacheDate(row.fetched_at)}.`
+  };
+}
+
+function formatCacheDate(value: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York"
+  }).format(value);
 }
 
 export async function fetchInstagramMedia(url: string) {
