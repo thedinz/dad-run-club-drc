@@ -15,7 +15,7 @@ import {
 } from "./calendar.js";
 import { corsOrigin, env } from "./config.js";
 import { migrate, pool } from "./db.js";
-import { getInstagramFeed } from "./instagram.js";
+import { fetchInstagramMedia, getInstagramFeed } from "./instagram.js";
 import {
   getTokenFromRequest,
   getUserFromToken,
@@ -266,6 +266,24 @@ fastify.post("/admin/login", async (request, reply) => {
 });
 
 fastify.get("/instagram/feed", async () => getInstagramFeed());
+
+fastify.get("/instagram/media", async (request, reply) => {
+  const query = request.query as { url?: string };
+  if (!query.url) {
+    return reply.code(400).send({ error: "Media URL is required" });
+  }
+
+  try {
+    const media = await fetchInstagramMedia(query.url);
+    return reply
+      .header("content-type", media.contentType)
+      .header("cache-control", "public, max-age=3600")
+      .send(media.bytes);
+  } catch (error) {
+    request.log.warn(error);
+    return reply.code(404).send({ error: "Instagram media unavailable" });
+  }
+});
 
 fastify.get("/chat/messages", { preHandler: requireUser }, async (request) => {
   const query = request.query as { limit?: string };

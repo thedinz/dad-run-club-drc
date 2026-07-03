@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
-import { api } from "../api";
+import { API_URL, api } from "../api";
 import Screen from "../components/Screen";
 import { colors, shadows } from "../theme";
 import type { FeedResponse, InstagramPost } from "../types";
@@ -90,6 +90,9 @@ export default function FeedScreen() {
 }
 
 function PostCard({ post }: { post: InstagramPost }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUri = post.imageUrl ? resolveImageUrl(post.imageUrl) : null;
+
   return (
     <TouchableOpacity
       activeOpacity={0.86}
@@ -97,8 +100,12 @@ function PostCard({ post }: { post: InstagramPost }) {
       onPress={() => Linking.openURL(post.permalink)}
     >
       <View style={styles.media}>
-        {post.imageUrl ? (
-          <Image source={{ uri: post.imageUrl }} style={styles.mediaImage} />
+        {imageUri && !imageFailed ? (
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.mediaImage}
+            onError={() => setImageFailed(true)}
+          />
         ) : (
           <View style={styles.placeholder}>
             <Image source={logo} style={styles.placeholderLogo} />
@@ -111,6 +118,14 @@ function PostCard({ post }: { post: InstagramPost }) {
       </View>
     </TouchableOpacity>
   );
+}
+
+function resolveImageUrl(url: string) {
+  if (url.startsWith("http")) {
+    return url;
+  }
+
+  return `${API_URL}${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
 function formatDate(value: string) {

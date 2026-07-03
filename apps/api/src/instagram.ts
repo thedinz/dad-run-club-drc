@@ -46,6 +46,13 @@ type PublicInstagramResponse = {
 };
 
 const INSTAGRAM_WEB_APP_ID = "936619743392459";
+const INSTAGRAM_PROFILE_URL = `https://www.instagram.com/${env.instagramUsername}/`;
+const PUBLIC_FETCH_HEADERS = {
+  accept: "text/html,application/xhtml+xml",
+  "accept-language": "en-US,en;q=0.9",
+  "user-agent":
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+};
 const CACHE_MS = 5 * 60 * 1000;
 let cachedFeed: { expiresAt: number; value: FeedResponse } | null = null;
 
@@ -91,7 +98,9 @@ async function loadInstagramFeed(): Promise<FeedResponse> {
         posts: (payload.data ?? []).map((post) => ({
           id: post.id,
           caption: post.caption ?? "",
-          imageUrl: post.media_url ?? post.thumbnail_url ?? null,
+          imageUrl: proxiedInstagramImageUrl(
+            post.media_url ?? post.thumbnail_url ?? null
+          ),
           permalink:
             post.permalink ?? `https://www.instagram.com/${env.instagramUsername}/`,
           mediaType: post.media_type ?? "IMAGE",
@@ -113,14 +122,8 @@ async function loadInstagramFeed(): Promise<FeedResponse> {
 }
 
 async function getPublicProfileFeed(): Promise<FeedResponse> {
-  const profileUrl = `https://www.instagram.com/${env.instagramUsername}/`;
-  const profileResponse = await fetch(profileUrl, {
-    headers: {
-      accept: "text/html,application/xhtml+xml",
-      "accept-language": "en-US,en;q=0.9",
-      "user-agent":
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-    }
+  const profileResponse = await fetch(INSTAGRAM_PROFILE_URL, {
+    headers: PUBLIC_FETCH_HEADERS
   });
 
   if (!profileResponse.ok) {
@@ -142,9 +145,8 @@ async function getPublicProfileFeed(): Promise<FeedResponse> {
     headers: {
       accept: "application/json",
       "accept-language": "en-US,en;q=0.9",
-      referer: profileUrl,
-      "user-agent":
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      referer: INSTAGRAM_PROFILE_URL,
+      "user-agent": PUBLIC_FETCH_HEADERS["user-agent"],
       "x-ig-app-id": INSTAGRAM_WEB_APP_ID,
       "x-requested-with": "XMLHttpRequest",
       ...(cookieHeader ? { cookie: cookieHeader } : {}),
@@ -169,7 +171,9 @@ async function getPublicProfileFeed(): Promise<FeedResponse> {
       {
         id: node.id,
         caption: node.edge_media_to_caption?.edges?.[0]?.node?.text ?? "",
-        imageUrl: node.display_url ?? node.thumbnail_src ?? null,
+        imageUrl: proxiedInstagramImageUrl(
+          node.display_url ?? node.thumbnail_src ?? null
+        ),
         permalink: `https://www.instagram.com/p/${node.shortcode}/`,
         mediaType: node.is_video ? "VIDEO" : node.__typename ?? "IMAGE",
         timestamp: new Date(
@@ -186,7 +190,7 @@ async function getPublicProfileFeed(): Promise<FeedResponse> {
   return {
     source: "instagram-public",
     username: user?.username ?? env.instagramUsername,
-    profileUrl,
+    profileUrl: INSTAGRAM_PROFILE_URL,
     posts
   };
 }
@@ -201,6 +205,56 @@ function getSetCookies(headers: Headers) {
 
 function cookieHeaderFrom(setCookies: string[]) {
   return setCookies.map((cookie) => cookie.split(";")[0]).join("; ");
+}
+
+function proxiedInstagramImageUrl(url: string | null | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  return `/instagram/media?url=${encodeURIComponent(url)}`;
+}
+
+export async function fetchInstagramMedia(url: string) {
+  if (!isAllowedInstagramMediaUrl(url)) {
+    throw new Error("Unsupported Instagram media URL");
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9",
+      referer: INSTAGRAM_PROFILE_URL,
+      "user-agent": PUBLIC_FETCH_HEADERS["user-agent"]
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Instagram media returned ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") ?? "image/jpeg";
+  if (!contentType.toLowerCase().startsWith("image/")) {
+    throw new Error(`Unsupported Instagram media type: ${contentType}`);
+  }
+
+  return {
+    contentType,
+    bytes: Buffer.from(await response.arrayBuffer())
+  };
+}
+
+function isAllowedInstagramMediaUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname.endsWith(".cdninstagram.com") ||
+        url.hostname.endsWith(".fbcdn.net"))
+    );
+  } catch {
+    return false;
+  }
 }
 
 function mockFeed(note: string) {
