@@ -131,8 +131,15 @@ The root `docker-compose.yml` is the image-based server Compose file. It uses:
 - `ghcr.io/thedinz/dad-run-club-drc-web`
 
 The GitHub Actions workflow builds and pushes those images on pushes to `main`.
+The repository and container packages are public, so the server does not need a GitHub or GHCR login to pull them.
 
-On your server, put this next to `docker-compose.yml` as `.env`:
+One-liner for a new dev server:
+
+```bash
+mkdir -p ~/drc && cd ~/drc && curl -fsSLO https://raw.githubusercontent.com/thedinz/dad-run-club-drc/main/docker-compose.yml && printf "POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\nADMIN_USERNAME=admin\nADMIN_PASSWORD=admin\nSEED_INVITE_CODE=DRC-FOUNDERS\nCORS_ORIGIN=*\n" "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env && docker compose pull && docker compose up -d
+```
+
+Or, if you want to write the files manually, put this next to `docker-compose.yml` as `.env`:
 
 ```bash
 POSTGRES_PASSWORD=replace-me
@@ -146,7 +153,6 @@ CORS_ORIGIN=*
 Then run:
 
 ```bash
-docker login ghcr.io
 docker compose pull
 docker compose up -d
 ```
